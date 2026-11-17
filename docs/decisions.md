@@ -465,3 +465,30 @@ Raw data: results/tesla_t4/2026-11-17_monarch_block_fft_5.jsonl.
   Phase 2 run: 166 (N=256), 187 (512), 183 (1024), 220 (2048), 230 (4096).
   These come from different Colab sessions, one run each; I don't compare
   them closely until the sweep runs both binaries in the same session.
+
+## Phase 4
+
+### One sweep file per session
+`scripts/sweep.py` runs both binaries with the same `--out` file, then
+appends one `"experiment":"sass"` line per kernel parsed from
+`sass_check.sh`. The file name gets a `_k` suffix instead of being appended
+to. `plot.py` uses, by default, only the newest sweep file of each GPU
+directory. So cuFFTDx and Monarch numbers in a figure always come from one
+Colab session: the earlier per-binary runs differ by a few percent between
+sessions (cuFFTDx fp16 N=256: 166 GB/s; Monarch numbers of the same
+commit moved by up to 10 % between runs 4 and 5). Alternative: plot every
+file and average. I rejected that because it mixes sessions with different
+clocks and commits.
+
+### What the figures show
+- Throughput: the batch-2^14 rows. For Monarch the line joins the fastest
+  factorization per N, and the others are hollow markers labeled n1xn2.
+  Error bars are the IQR of the 50 launches, converted to GB/s.
+- Error: same layout. The line joins the most accurate factorization.
+- Scatter: one point per (impl, precision, N), with Monarch at its fastest
+  factorization so the point matches the throughput line.
+- Latency is a table, not a figure: the two implementations put different
+  numbers of FFTs in one block, so the comparison is per launch, not per FFT.
+- Colors: categorical slots 1 and 2 of the dataviz reference palette,
+  validated with its CVD script (protan ΔE 24.7). Marker shape also encodes
+  the implementation, so the figures read without color.
