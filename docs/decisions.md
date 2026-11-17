@@ -133,8 +133,9 @@ comes from quantizing x, not from the GEMMs. To be checked against the GPU.
 (cufftdx/detail/fft_execution.hpp, cufftdx/traits/detail/working_group.hpp);
 `execute(value_type*, void* smem)` (fft_execution.hpp:697);
 `CUFFTDX_SKIP_IF_NOT_APPLICABLE_SM_BLOCK` (detail/commondx_config.hpp).
-`working_group` is recent: the CUDALibrarySamples examples on GitHub use
-older names, so I followed the examples shipped inside the 26.10 package.
+The `common/block_io.hpp` on GitHub (CUDALibrarySamples, master, checked
+2026-11-17) indexes threads with `threadIdx` directly; the copy shipped in
+the 26.10 package goes through `FFT::working_group`. I followed the package.
 Max block size on sm_75 is 16384 for both fp16 and fp32
 (`CUFFTDX_DETAIL_SM750_FP{16,32}_MAX`, detail/fft_sizes.hpp), so the sweep goes
 to 16384. Configurations whose `shared_memory_size` exceeds the device opt-in
