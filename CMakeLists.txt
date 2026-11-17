@@ -15,6 +15,8 @@ set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 set(CMAKE_CUDA_ARCHITECTURES ${CUDA_ARCH})
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
 set(CMAKE_CUDA_FLAGS_RELEASE "-O3 -DNDEBUG")
+# source correlation for ncu and SASS; unlike -G it keeps optimizations on
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -lineinfo")
 
 if(NOT MATHDX_ROOT)
   message(FATAL_ERROR "set -DMATHDX_ROOT=<dir>/nvidia/mathdx/YY.MM")
@@ -33,3 +35,31 @@ else()
 endif()
 
 target_link_libraries(dx_smoke PRIVATE mathdx::cufftdx ${cublasdx_target})
+
+find_package(CUDAToolkit REQUIRED)
+
+# provenance baked in at configure time; the runner always configures a fresh clone
+execute_process(COMMAND git rev-parse --short HEAD WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                OUTPUT_VARIABLE git_commit OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+execute_process(COMMAND git status --porcelain --untracked-files=no WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                OUTPUT_VARIABLE git_status OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+if(NOT git_commit)
+  set(git_commit unknown)
+endif()
+if(git_status)
+  set(git_dirty 1)
+else()
+  set(git_dirty 0)
+endif()
+
+add_executable(cufftdx_block_fft cuda/cufftdx/block_fft.cu)
+target_include_directories(cufftdx_block_fft PRIVATE cuda/common)
+target_compile_definitions(cufftdx_block_fft PRIVATE
+  DXB_SM=${CUDA_ARCH}0
+  DXB_GIT_COMMIT="${git_commit}"
+  DXB_GIT_DIRTY=${git_dirty}
+  DXB_MATHDX_VERSION="${mathdx_VERSION}")
+target_link_libraries(cufftdx_block_fft PRIVATE mathdx::cufftdx CUDA::cufft CUDA::nvml)
+
+enable_testing()
+add_test(NAME cufftdx_accuracy COMMAND cufftdx_block_fft --check)
