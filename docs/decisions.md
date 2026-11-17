@@ -216,3 +216,111 @@ of an fp16-operand / fp32-accumulate Monarch FFT (~3e-4), and the HFMA2-only
 SASS is a plausible reason. If the GPU Monarch kernel reproduces the
 emulation, tensor cores would buy accuracy over cuFFTDx fp16, not only speed.
 To be measured in Phase 3.
+
+## Phase 3
+
+### cuBLASDx names and where I checked them (MathDx 26.10, cuBLASDx 0.8.0)
+- `Size`, `Precision<PA,PB,PC>`, `Type<type::complex>`, `Function<function::MM>`,
+  `Arrangement`, `MaxAlignment`, `Block`, `BlockDim`, `SM`: doc/cublasdx/html/api/operators.html.
+- Register API `execute(tensor_a, tensor_b)` returning an accumulator, and
+  "call `__syncthreads()` before any thread overwrites A or B" after it:
+  api/gemm_methods.html, "Register API".
+- Accumulator `get_results`, `is_thread_active`, `is_predicated`,
+  `is_index_in_bounds`, `map_fragment_index` returning the (m, n) coordinate:
+  api/other_tensors.html, "Accumulator"; implemented in
+  include/cublasdx/detail/accumulator/rmem_accumulator.hpp.
+- `get_layout_smem_a/b` follow `Arrangement` with default leading dimension;
+  row-major A is M×K with LDA = K, row-major B is K×N with LDB = N:
+  api/operators.html, Table 3.
+- `size_of<BLAS>::{m,n,k}`: include/cublasdx/traits/blas_traits.hpp:108.
+  `CUBLASDX_VERSION_{MAJOR,MINOR,PATCH}`: include/cublasdx/cublasdx_version.hpp.
+  `CUBLASDX_SKIP_IF_NOT_APPLICABLE_SM_BLOCK`: include/cublasdx/detail/commondx_config.hpp:52.
+- `complex<__half>(float re, float im)` rounds with `__float2half_rn`, and
+  `.real()/.imag()`: include/commondx/complex_types.hpp:220-240.
+- `cublasdx::get<>` is named in the docs but I did not find it exported in the
+  headers, so I use `cute::get<>`, which the cuBLASDx headers use themselves
+  (include/cublasdx/detail/tensor.hpp:239).
+- `BlockDim<X>`: the kernel must be launched with at least X threads, all
+  participating and consecutive: api/operators.html, "BlockDim Operator".
+
+### Which instruction each precision gets on sm_75
+include/cublasdx/database/gemm/mma_atoms.hpp:150-200 (`get_mma_family`):
+- A, B = half and C = float, complex: `SM75_16x8x8_C32C16C16C32_TN`. That is
+  `ComplexMMA<SM75_16x8x8_F32F16F16F32_TN>`
+  (detail/cute/extension/arch/complex_mma.hpp:169): 4 real 16x8x8 HMMAs with
+  fp32 accumulators per complex tile (re·re, im·re, −im·im, re·im).
+- A, B, C = float, complex: `mma_family<>`, i.e. no tensor-core atom on sm_75
+  (no TF32 on Turing). The fp32 Monarch is an FFMA GEMM; it is there as the
+  same-algorithm, same-precision comparison against cuFFTDx fp32.
+To be confirmed in SASS: HMMA in the fp16 kernels, none in fp32.
+
+### Legal shapes on sm_75
+Size is only bounded by shared memory (requirements page, "Supported Maximal
+Sizes"); shapes not divisible by the MMA tile are predicated (other_tensors,
+`is_predicated`). n1 = 8 with M = 8 < 16 is in the sweep on purpose to
+exercise that path.
+
+### Precision<__half, __half, float>, not Precision<__half>
+Phase 1 emulation and the fp16 cuFFTDx result point the same way: the fp16
+error is dominated by where rounding happens. half×half→half would accumulate
+n1 or n2 terms in fp16 (the requirements page says the same about half C).
+The instruction count is the same either way (one HMMA.1688 per
+real tile); whether the fp32-accumulate HMMA is slower on T4 I have not measured.
+
+### Batching: stack FFTs along the free GEMM dimension
+GEMM 1 is F_n1 (n1×n1) times B1 (n1 × fpb·n2): fpb FFTs side by side as extra
+columns. GEMM 2 is A2 (fpb·n1 × n2) times F_n2: FFTs stacked as extra rows.
+One GEMM per stage per group instead of fpb small ones; F is shared by all.
+fpb = 4096 / N (at least 1), so a group is 4096 complex elements.
+
+### Shared memory layout
+[F_n1 | F_n2 | buf], all `complex<T>`. With n1 == n2 the one table is used
+for both GEMMs (F_n is symmetric). buf (fpb·N) holds B1, then A2, then the
+output in natural order: three uses, separated by `__syncthreads()`. The
+intermediate never goes to shared memory in fp32: it comes out of GEMM 1 in
+registers, gets the twiddle in fp32, and is rounded once to T when written
+as A2. Smem: fp16 64×64 = 16 KB (one F) + 16 KB = 32 KB; fp32 64×64 = 64 KB,
+exactly the T4 opt-in limit.
+N = 8192 does not fit with two dense factors: 64×128 needs 16 KB + 64 KB for F
+alone in fp16. Going further needs three factors or F in registers; out of
+MVP scope.
+
+### Table storage precision
+- F_n1, F_n2: stored as `complex<T>`. They are tensor-core operands, so for
+  fp16 they must be half; the rounding of F is inherent to the method and is
+  part of the Phase 1 emulation.
+- Twiddles: fp32 complex in global memory for both precisions. They multiply
+  the fp32 accumulator before the single rounding to T, so an fp16 table
+  would add a second rounding of the same size as the operand rounding, for
+  nothing: the table is N·8 B (32 KB at N = 4096) and stays in L1/L2.
+- All tables are computed in fp64 with `sincospi` on exact integer phases
+  (j·k mod m) and rounded once (derivation.md, "Twiddle and DFT-matrix precision").
+
+### Output precision
+The fp16 kernel writes fp16, like the cuFFTDx fp16 baseline, so both move the
+same bytes. This adds one rounding that the Phase 1 emulation does not have
+(it kept the output in fp32); expect the GPU error to be somewhat above the
+emulation for that reason.
+
+### Persistent grid
+F is loaded into shared memory once per block, then the block loops over
+groups (`g += gridDim.x`), grid = min(groups, occupancy × SMs). Without the
+loop each block would re-read n1² + n2² elements from L2 for 4096 elements of
+data, i.e. as much table traffic as data traffic at N = 4096.
+
+### Output transpose through shared memory
+GEMM 2 results are written to buf at X_f[j1 + n1·j2] and copied out
+contiguously, instead of storing fragments straight to global memory with
+stride n1.
+
+### Block size
+128 threads for both GEMMs (`BlockDim<128>`), chosen once, not tuned. Tuning
+BlockDim and smem layouts (swizzled `suggest_layout_smem_*`) is a later step;
+the default layouts are used now because the manual indexing above assumes
+plain row-major.
+
+### Harness refactor
+The accuracy and timing loop moved from block_fft.cu into
+`measure()` in harness.cuh so both implementations use the same code
+path: same seeds, batches, quantiles and JSON fields. Skipped
+configurations are now recorded as `"status":"skipped"` with a reason.
