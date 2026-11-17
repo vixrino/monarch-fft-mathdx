@@ -406,3 +406,20 @@ has no tensor-core path on sm_75 and the plain layouts let n1 == n2 share F):
 - F_n1 (A role of GEMM 1) and F_n2 (B role of GEMM 2) can no longer share a
   buffer even when n1 == n2: their suggested layouts differ. fp16 64×64 smem
   goes from 32 KB to 48 KB.
+
+### Phase 3, fourth run: fp16 Monarch on HMMA (Colab T4, commit 2e5eade)
+Raw data: results/tesla_t4/2026-11-17_monarch_block_fft_4.jsonl.
+- ctest: cufftdx_accuracy and monarch_accuracy pass; every fp16 and fp32
+  size passes `--check`. fp32 32×64 and 64×32 are still skipped (73728 B smem).
+- SASS: 2048 HMMA lines in the binary; every fp16 `monarch_fft` instance has
+  MMA > 0 (64 to 512 static), every fp32 instance has 0 MMA and runs on FFMA,
+  as expected on sm_75. cuFFTDx kernels: 0 MMA, HFMA2/FFMA only.
+- Accuracy (median rel L2 over 5 seeds × 64 FFTs): fp16 3.7-4.0e-4, the same
+  range as the FMA path (4.2-4.6e-4) and below cuFFTDx fp16 (1.2-2.5e-3).
+  fp32 1.4-2.8e-7.
+- Speed at batch 2^14 (recorded, not interpreted yet): fp16 72-145 GB/s
+  effective, up from 15-78 on the FMA path; cuFFTDx fp16 is 166-236.
+- Open: the 16×16 and 16×32 fp16 kernels have ~6500 static instructions vs
+  ~2100-2800 for the other shapes, with only 64/128 MMA. One of their two
+  GEMMs (a K = 16 one with a 16-wide side) may still be on a non-MMA path.
+  Not checked yet: needs the per-kernel opcode histogram.
