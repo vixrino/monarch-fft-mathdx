@@ -341,3 +341,42 @@ Raw data: `results/tesla_t4/2026-11-17_monarch_block_fft.jsonl`.
 - Speed (recorded, not interpreted yet): fp16 Monarch 15.5-58 GB/s effective
   at batch 2^14 vs 166-236 GB/s for cuFFTDx fp16; occupancy 1-3 blocks of
   128 threads per SM.
+
+### Phase 3, second run: the fp16 GEMMs do not use tensor cores (commit 7cf55d3)
+Evidence: `cuobjdump -sass build/monarch_fft | grep -c HMMA` = 0 for the whole
+binary. Opcode histogram of the fp16 64×64 kernel: 16384 HMUL2 + 16384 FADD,
+i.e. the complex GEMM runs as scalar half multiplies with fp32 adds.
+128-168 registers, no local memory, so it is not a spill problem.
+
+Cause, read in the headers after the run:
+include/cublasdx/database/gemm/database_getter.hpp, `get_tile_config`: for a
+non-GEMV shape cuBLASDx first looks up the tuning database at
+sqrt(M·N) (then rounded to a multiple of 16), and only if no record matches
+does it fall back to `get_mma_family` (the HMMA atoms I cited above).
+include/cublasdx/database/gemm/sm75/cfp16_cfp16_cfp32_tn.hpp.inc has records
+for 16, 32, 48 and 64, and all 24 of them are `mma_atom::universal_fma`; the
+real fp16 file (fp16_fp16_fp32_tn) is all `universal_fma` as well. The sm80
+version of the same file uses the SM75/SM80 complex HMMA atoms. All my GEMMs
+have M·N = 4096, so sqrt = 64 hits a record and gets FMA.
+
+So my earlier entry "half/float complex on sm_75 selects
+SM75_16x8x8_C32C16C16C32_TN" was wrong: that is only the fallback.
+The performance-guide card (doc/cublasdx/html/markdown/performance_guide_api_supermma.md)
+says half inputs with a float accumulator use tensor cores from SM 75 for any
+shape except M, N or K = 1; for the default layout path on sm_75 that does
+not match what the headers do. I don't know whether the database choice is a
+deliberate tuning result for T4 or an artifact; I only know what is selected.
+
+Next step: `cuda/monarch/mma_probe.cu`, one 64×64×64 complex fp16 GEMM in
+three variants that differ only in what selects the instruction:
+0. default layouts and accumulator (what monarch_fft does now),
+1. `suggest_layout_smem_*` + `suggest_accumulator` (the documented
+   "supermma" path; database/gemm/suggested/suggested_supermma.hpp lists
+   SM75_16x8x8_C32C16C16C32_TN for this precision),
+2. `experimental::Tile<cublasdx::detail::SM75_16x8x8_C32C16C16C32_TN, 2, 2>`
+   (include/cublasdx/operators/experimental/tile.hpp; overrides the database
+   in `get_database_threads`). This uses an internal `detail` type, so it is
+   the last resort.
+Each variant is checked for an exact result on small-integer inputs, and
+`sass_check.sh` on the binary shows which one emits HMMA. The Monarch kernel
+will then use the first variant that does.

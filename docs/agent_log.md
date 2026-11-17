@@ -25,3 +25,17 @@ Each entry: what the agent (Claude Code) got wrong, how it was caught, fix.
 - `sass_check.sh` worked on real SASS, but printed demangled names cut before
   the size/precision, so fp16 and fp32 rows were indistinguishable. Fixed by
   extracting N and precision from the name.
+
+## Phase 3
+- Claimed from `get_mma_family` (database/gemm/mma_atoms.hpp) that complex
+  half×half→float on sm_75 would use the HMMA atom, and wrote it in
+  decisions.md as "to be confirmed in SASS". It was wrong: the tuning
+  database lookup in `get_tile_config` runs first and its sm_75 records pick
+  `universal_fma`. Caught only by the SASS check (0 HMMA in the binary,
+  HMUL2 + FADD in the histogram). Correctness tests passed throughout, so
+  without the SASS rule this would have shipped as a "tensor-core FFT".
+  Lesson: an instruction choice has to be traced through the whole selection
+  path, or measured; reading the last function in the chain is not enough.
+- My first `sass_check.sh` call filtered on "monarch", which would also have
+  hidden HMMAs in a non-inlined device function. The second run counted the
+  whole binary to rule that out before concluding.
