@@ -450,3 +450,18 @@ but that halves the threads for every size; forcing the atom with
 `experimental::Tile` uses a `detail` type. Neither is worth it for one shape.
 Cost: none in smem; the load and epilogue index maps change, the GEMMs are the
 same size.
+
+### Phase 3, fifth run: transposed GEMM 1 (Colab T4, commit 14bbef2)
+Raw data: results/tesla_t4/2026-11-17_monarch_block_fft_5.jsonl.
+- ctest passes; all 14 runnable sizes pass `--check` (fp32 32×64 / 64×32
+  still skipped for smem).
+- SASS: 2176 HMMA in the binary. fp16 16×16 went from 6576 static
+  instructions / 64 MMA to 2352 / 128, 16×32 from 6520 / 128 to 2264 / 192;
+  they now match the other shapes. 8×32 is 3944 / 128 (GEMM 1 still FMA, as
+  predicted) and uses 254 registers.
+- fp16 rel L2 3.7-3.8e-4, unchanged within noise.
+- Speed at batch 2^14, fp16: 16×16 174 GB/s (was 80), 16×32 173 (was 72),
+  32×16 170, 32×32 146, 32×64 / 64×32 100, 64×64 87. cuFFTDx fp16 from the
+  Phase 2 run: 166 (N=256), 187 (512), 183 (1024), 220 (2048), 230 (4096).
+  These come from different Colab sessions, one run each; I don't compare
+  them closely until the sweep runs both binaries in the same session.
