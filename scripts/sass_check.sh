@@ -24,7 +24,9 @@ cuobjdump -sass "$bin" | awk '
   END {
     for (f in total) printf "%d\t%d\t%d\t%d\t%s\n", total[f], mma[f] + 0, ffma[f] + 0, hfma2[f] + 0, f
   }' | sort -t$'\t' -k5 | while IFS=$'\t' read -r t m f h name; do
-  pretty=$(echo "$name" | $demangle)
+  # cuFFTDx descriptors demangle to several hundred characters; keep size and precision
+  pretty=$(echo "$name" | $demangle |
+    sed -E 's/^void ([a-z_]+)<.*Size<\(unsigned int\)([0-9]+)>.*Precision<([^>]+)>.*$/\1 N=\2 \3/')
   if [ -n "$filter" ] && ! echo "$pretty" | grep -q -- "$filter"; then continue; fi
   printf "%7s %6s %6s %6s  %s\n" "$t" "$m" "$f" "$h" "${pretty:0:140}"
 done | { printf "%7s %6s %6s %6s  %s\n" total mma ffma hfma2 kernel; cat; }
