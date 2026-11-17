@@ -15,3 +15,13 @@ Each entry: what the agent (Claude Code) got wrong, how it was caught, fix.
   run: that package has no such target. CMake now falls back to
   `mathdx::cublasdx`, which is header-only in 25.12. Lesson: read the cmake
   config of the installed package, not the latest docs.
+
+## Phase 2
+- The cuFFTDx baseline compiled and passed on the first GPU run. Every
+  operator and trait was looked up in the 26.10 headers before use (list in
+  docs/decisions.md). The GitHub CUDALibrarySamples examples use an older
+  thread-indexing API than the one in the package (`working_group`); reading
+  the examples from the installed package avoided that mismatch.
+- `sass_check.sh` worked on real SASS, but printed demangled names cut before
+  the size/precision, so fp16 and fp32 rows were indistinguishable. Fixed by
+  extracting N and precision from the name.

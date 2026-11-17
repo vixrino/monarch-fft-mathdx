@@ -192,3 +192,26 @@ reconfiguring; the runner always configures a fresh clone.
 anything containing `MMA` (HMMA, IMMA, ...), `FFMA`, `HFMA2`. These are static
 counts, not executed instructions. For the cuFFTDx baseline I expect zero
 MMA; it is the reference point for the Monarch kernel's proof.
+
+### Phase 2 run (Colab T4, commit 25961ee)
+Raw data: `results/tesla_t4/2026-11-17_cufftdx_block_fft.jsonl`, copied
+unchanged from the runner. What I take from it:
+
+- All 14 configurations pass `--check`; none hit the smem limit. N = 16384
+  uses exactly 65536 B, the T4 opt-in maximum, so it runs 1 block/SM.
+- Batch 2^14: fp32 reaches 212-238 GB/s effective, fp16 166-236 GB/s.
+  The T4 spec sheet lists 320 GB/s, so the baseline is at 66-74 % of peak
+  DRAM bandwidth, i.e. memory-bound as expected for a single-pass block FFT.
+  fp16 is slower than fp32 in GB/s for N <= 1024 (fp16 time is 0.62-0.64x fp32,
+  not 0.5x), so halving the bytes does not halve the time at small N.
+- fp32 rel L2 1.4e-7 to 2.4e-7. fp16 rel L2 1.2e-3 to 2.5e-3, growing with N.
+- SASS (`sass_check.sh`): 0 MMA in every cuFFTDx kernel. fp32 kernels use
+  FFMA, fp16 kernels use HFMA2 and no FFMA, i.e. the fp16 butterflies are
+  computed in half precision.
+
+The last two points together give a hypothesis for the Monarch kernel, not a
+result: the cuFFTDx fp16 error (~2e-3) is about 7x the Phase 1 CPU emulation
+of an fp16-operand / fp32-accumulate Monarch FFT (~3e-4), and the HFMA2-only
+SASS is a plausible reason. If the GPU Monarch kernel reproduces the
+emulation, tensor cores would buy accuracy over cuFFTDx fp16, not only speed.
+To be measured in Phase 3.
