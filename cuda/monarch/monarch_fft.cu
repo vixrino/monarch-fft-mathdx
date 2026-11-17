@@ -1,11 +1,12 @@
 // Batched block-level Monarch / four-step FFT, N = n1 * n2, as two cuBLASDx GEMMs.
 // Index maps and math: reference/monarch.py and docs/derivation.md. Per group of fpb FFTs:
 //
-//   buf  <- x                as B1 = (n1 x fpb*n2) row-major, B1[i1, f*n2 + i2] = x_f[n2*i1 + i2]
+//   buf  <- x                as B1 = (n1 x fpb*n2), B1[i1, f*n2 + i2] = x_f[n2*i1 + i2]
 //   acc1  = F_n1 @ B1        GEMM 1, M = n1, N = fpb*n2, K = n1
-//   buf  <- acc1 * tw        as A2 = (fpb*n1 x n2) row-major, A2[f*n1 + j1, i2]; rounded to T
+//   buf  <- acc1 * tw        as A2 = (fpb*n1 x n2), A2[f*n1 + j1, i2]; rounded to T
 //   acc2  = A2 @ F_n2        GEMM 2, M = fpb*n1, N = n2, K = n2
-//   buf  <- acc2             as X_f[j1 + n1*j2] (the transpose), rounded to T, then copied out
+//   buf  <- acc2             as X_f[j1 + n1*j2] (the transpose, plain indexing), rounded to T, copied out
+// B1, A2 and the F tables use cuBLASDx's suggested (swizzled) smem layouts for fp16, plain row-major for fp32.
 //
 // Every cuBLASDx name used here is checked against the MathDx 26.10 headers/docs; see docs/decisions.md.
 #include <type_traits>
@@ -30,10 +31,31 @@ struct monarch {
   using data = typename g1::a_value_type;  // cublasdx::complex<T>
   using io = std::conditional_t<std::is_same_v<T, __half>, __half2, float2>;
   static_assert(sizeof(data) == sizeof(io), "smem element and global element must share the (re, im) layout");
-  // F_n is symmetric, so with n1 == n2 one table serves both GEMMs
-  static constexpr unsigned f_elems = N1 * N1 + (N1 == N2 ? 0 : N2 * N2);
+  // suggested layouts are what reach HMMA on sm_75 (mma_probe.cu, docs/decisions.md); fp32 has no tensor cores
+  static constexpr bool suggest = std::is_same_v<T, __half>;
+  // F_n is symmetric, so with plain layouts one table serves both GEMMs; swizzled A and B layouts differ
+  static constexpr bool share_f = N1 == N2 && !suggest;
+  static constexpr unsigned f_elems = N1 * N1 + (share_f ? 0 : N2 * N2);
   static constexpr unsigned smem = (f_elems + FPB * n) * sizeof(data);
 };
+
+template <class G, bool Suggest>
+__device__ auto layout_a() {
+  if constexpr (Suggest) return G::suggest_layout_smem_a();
+  else return G::get_layout_smem_a();
+}
+
+template <class G, bool Suggest>
+__device__ auto layout_b() {
+  if constexpr (Suggest) return G::suggest_layout_smem_b();
+  else return G::get_layout_smem_b();
+}
+
+template <class G, bool Suggest>
+__device__ auto accumulator() {
+  if constexpr (Suggest) return G::suggest_accumulator();
+  else return G::get_accumulator();
+}
 
 template <class M>
 __launch_bounds__(threads) __global__
@@ -45,33 +67,37 @@ void monarch_fft(const typename M::io* x, typename M::io* y, const typename M::i
   using io = typename M::io;
   constexpr unsigned n1 = cublasdx::size_of<g1>::m, n2 = cublasdx::size_of<g2>::n, fpb = cublasdx::size_of<g2>::m / n1;
   constexpr unsigned n = M::n;
+  constexpr bool sg = M::suggest;
 
   CUBLASDX_SKIP_IF_NOT_APPLICABLE_SM_BLOCK(g1) {
     extern __shared__ __align__(16) cublasdx::byte smem[];
     data* f1 = reinterpret_cast<data*>(smem);
-    data* f2 = n1 == n2 ? f1 : f1 + n1 * n1;
+    data* f2 = M::share_f ? f1 : f1 + n1 * n1;
     data* buf = f1 + M::f_elems;
     const unsigned tid = threadIdx.x;
 
-    // F tables are loaded once per block and reused for every group (persistent grid)
-    for (unsigned i = tid; i < M::f_elems; i += threads)
-      f1[i] = reinterpret_cast<const data&>(i < n1 * n1 ? f1g[i] : f2g[i - n1 * n1]);
+    // all smem writes below go through (row, col) tensor coordinates, so they are valid for swizzled layouts
+    auto a1 = cublasdx::make_tensor(f1, layout_a<g1, sg>());
+    auto b1 = cublasdx::make_tensor(buf, layout_b<g1, sg>());
+    auto a2 = cublasdx::make_tensor(buf, layout_a<g2, sg>());
+    auto b2 = cublasdx::make_tensor(f2, layout_b<g2, sg>());
 
-    auto a1 = cublasdx::make_tensor(f1, g1::get_layout_smem_a());
-    auto b1 = cublasdx::make_tensor(buf, g1::get_layout_smem_b());
-    auto a2 = cublasdx::make_tensor(buf, g2::get_layout_smem_a());
-    auto b2 = cublasdx::make_tensor(f2, g2::get_layout_smem_b());
+    // F tables are loaded once per block and reused for every group (persistent grid)
+    for (unsigned i = tid; i < n1 * n1; i += threads) a1(i / n1, i % n1) = reinterpret_cast<const data&>(f1g[i]);
+    if constexpr (!M::share_f)
+      for (unsigned i = tid; i < n2 * n2; i += threads) b2(i / n2, i % n2) = reinterpret_cast<const data&>(f2g[i]);
 
     for (unsigned g = blockIdx.x; g < groups; g += gridDim.x) {
       const size_t base = size_t(g) * fpb * n;
 
       for (unsigned e = tid; e < fpb * n; e += threads) {
         const unsigned f = e / n, i1 = (e % n) / n2, i2 = e % n2;
-        buf[i1 * (fpb * n2) + f * n2 + i2] = reinterpret_cast<const data&>(x[base + e]);
+        b1(i1, f * n2 + i2) = reinterpret_cast<const data&>(x[base + e]);
       }
       __syncthreads();
 
-      auto acc1 = g1().execute(a1, b1);
+      auto acc1 = accumulator<g1, sg>();
+      g1().execute(a1, b1, acc1);
       auto r1 = acc1.get_results();
       __syncthreads();  // other warps may still read b1, which a2 overwrites
       if (acc1.is_thread_active()) {
@@ -83,12 +109,13 @@ void monarch_fft(const typename M::io* x, typename M::io* y, const typename M::i
           const float2 w = tw[j1 * n2 + i2];
           const float re = r1(i).real(), im = r1(i).imag();
           // twiddle in fp32 on the fp32 accumulator; the single rounding to T happens here
-          buf[(f * n1 + j1) * n2 + i2] = data(re * w.x - im * w.y, re * w.y + im * w.x);
+          a2(f * n1 + j1, i2) = data(re * w.x - im * w.y, re * w.y + im * w.x);
         }
       }
       __syncthreads();
 
-      auto acc2 = g2().execute(a2, b2);
+      auto acc2 = accumulator<g2, sg>();
+      g2().execute(a2, b2, acc2);
       auto r2 = acc2.get_results();
       __syncthreads();
       if (acc2.is_thread_active()) {
