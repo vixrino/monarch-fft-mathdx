@@ -475,8 +475,7 @@ appends one `"experiment":"sass"` line per kernel parsed from
 to. `plot.py` uses, by default, only the newest sweep file of each GPU
 directory. So cuFFTDx and Monarch numbers in a figure always come from one
 Colab session: the earlier per-binary runs differ by a few percent between
-sessions (cuFFTDx fp16 N=256: 166 GB/s; Monarch numbers of the same
-commit moved by up to 10 % between runs 4 and 5). Alternative: plot every
+sessions. Alternative: plot every
 file and average. I rejected that because it mixes sessions with different
 clocks and commits.
 
@@ -492,3 +491,20 @@ clocks and commits.
 - Colors: categorical slots 1 and 2 of the dataviz reference palette,
   validated with its CVD script (protan ΔE 24.7). Marker shape also encodes
   the implementation, so the figures read without color.
+
+Correction to the entry above: I first justified it with "Monarch numbers of
+the same commit moved by up to 10 % between runs 4 and 5", but runs 4 and 5
+are different kernels (2e5eade vs 14bbef2). The real same-kernel comparison
+is run 5 vs the first sweep: the monarch kernel source did not change between
+14bbef2 and d481e92, and fp16 16×16 went from 174.3 to 192.8 GB/s (+11 %),
+32×32 from 145.9 to 165.6 (+13 %). cuFFTDx fp16 N=256 went from 165.6
+(Phase 2 run) to 162.4. So session-to-session variation on Colab is up to
+~13 % here, which is why figures only use one sweep file.
+
+### First sweep (Colab T4, commit d481e92)
+Raw data: results/tesla_t4/2026-11-17_sweep.jsonl. Tables and figures in
+docs/results.md and docs/figures/tesla_t4/ are generated from it by
+`scripts/plot.py`. ctest passed, every size passed `--check`, and the SASS
+table matches the per-binary runs (fp16 Monarch MMA > 0, all else 0).
+Plot fix after seeing it: a skipped N (fp32 Monarch 2048) now breaks the line
+instead of being drawn through.

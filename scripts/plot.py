@@ -77,6 +77,18 @@ def best_by_n(rows, impl, prec):
     return [best[n] for n in sorted(best)]
 
 
+def gaps(ns, ys):
+    # a skipped N (e.g. fp32 Monarch 2048, out of smem) breaks the line instead of being interpolated
+    xo, yo = [], []
+    for i, (n, y) in enumerate(zip(ns, ys)):
+        if i and n > 2 * ns[i - 1]:
+            xo.append(2 * ns[i - 1])
+            yo.append(float("nan"))
+        xo.append(n)
+        yo.append(y)
+    return xo, yo
+
+
 def style(ax, ylabel, logy=False):
     ax.set_xscale("log", base=2)
     if logy:
@@ -114,7 +126,8 @@ def fig_throughput(thr, gpu, out):
                 continue
             lo, hi = zip(*(gbps_iqr(r) for r in rs))
             y = [r["gbps_eff"] for r in rs]
-            ax.errorbar([r["n"] for r in rs], y, yerr=[[a - b for a, b in zip(y, lo)], [b - a for a, b in zip(y, hi)]],
+            ax.errorbar(*gaps([r["n"] for r in rs], y), yerr=[gaps([r["n"] for r in rs], v)[1] for v in
+                        ([a - b for a, b in zip(y, lo)], [b - a for a, b in zip(y, hi)])],
                         color=COLOR[impl], marker=marker, markersize=6, linewidth=2, capsize=0, label=NAME[impl] +
                         (", best n1xn2 per N" if impl == "monarch" else ""))
             end_label(ax, rs, "gbps_eff", impl)
@@ -152,7 +165,7 @@ def fig_error(thr, gpu, out):
                 if r["n"] not in line or r["rel_l2_median"] < line[r["n"]]["rel_l2_median"]:
                     line[r["n"]] = r
             lr = [line[n] for n in sorted(line)]
-            ax.plot([r["n"] for r in lr], [r["rel_l2_median"] for r in lr], color=COLOR[impl], marker=marker,
+            ax.plot(*gaps([r["n"] for r in lr], [r["rel_l2_median"] for r in lr]), color=COLOR[impl], marker=marker,
                     markersize=6, linewidth=2, label=NAME[impl])
             extra = [r for r in rs if r is not line[r["n"]]]
             ax.scatter([r["n"] for r in extra], [r["rel_l2_median"] for r in extra], marker=marker, s=36,
