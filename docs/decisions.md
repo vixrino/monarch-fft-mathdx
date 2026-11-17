@@ -533,8 +533,9 @@ Configurations profiled: Monarch fp16 64×64 (0.39× cuFFTDx) and 16×16
 ### Nsight Compute run (Colab T4, commit ea51822)
 Raw data: results/tesla_t4/2026-11-17_ncu_{cufftdx_fp16_256,cufftdx_fp16_4096,
 monarch_fp16_256_16x16,monarch_fp16_4096_64x64}.csv, plus a second sweep
-results/tesla_t4/2026-11-17_sweep_2.jsonl (same kernels; every throughput
-within 4 % of the first sweep, ratios unchanged to two digits). The summary
+results/tesla_t4/2026-11-17_sweep_2.jsonl (same kernels; batch-2^14
+throughputs differ from the first sweep by -1.2 % to +6.6 %, and the fp16
+Monarch/cuFFTDx ratios by at most 0.02, e.g. 1.19 -> 1.21 at N = 256). The summary
 table is in docs/results.md.
 
 What the profile says about Monarch fp16 64×64:
