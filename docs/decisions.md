@@ -324,3 +324,20 @@ The accuracy and timing loop moved from block_fft.cu into
 `measure()` in harness.cuh so both implementations use the same code
 path: same seeds, batches, quantiles and JSON fields. Skipped
 configurations are now recorded as `"status":"skipped"` with a reason.
+
+### Phase 3, first GPU run (Colab T4, commit 53cd975)
+Raw data: `results/tesla_t4/2026-11-17_monarch_block_fft.jsonl`.
+- Correctness: all 14 configurations that fit pass `--check`. fp16 rel L2
+  4.2e-4 to 4.6e-4, vs 2.6e-4 to 3.4e-4 in the Phase 1 CPU emulation; the gap
+  is in the direction expected from the extra fp16 rounding of the output.
+  fp32 rel L2 1.4e-7 to 2.8e-7, same range as cuFFTDx fp32.
+  fp32 32×64 and 64×32 skipped (73728 B smem > 65536 B).
+- Tensor cores: NOT shown. `sass_check.sh build/monarch_fft monarch` reports
+  0 MMA in every fp16 kernel, with 10k-35k instructions and almost no FFMA or
+  HFMA2. Since the filter keeps only names containing "monarch", HMMAs in a
+  non-inlined device function would not be counted. Next run checks the whole
+  binary (raw `grep -c HMMA`), the opcode histogram and register/local use.
+  No speed comparison is meaningful until this is settled.
+- Speed (recorded, not interpreted yet): fp16 Monarch 15.5-58 GB/s effective
+  at batch 2^14 vs 166-236 GB/s for cuFFTDx fp16; occupancy 1-3 blocks of
+  128 threads per SM.
