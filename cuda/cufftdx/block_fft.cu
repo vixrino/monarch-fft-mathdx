@@ -103,12 +103,14 @@ bool run(const args& a, FILE* f, const std::string& prov) {
   std::snprintf(label, sizeof label, "cufftdx %s N=%5u ept=%2u fpb=%3u smem=%6u", fp16 ? "fp16" : "fp32", N,
                 FFT::elements_per_thread, fpb, FFT::shared_memory_size);
   // loose sanity bounds; fp16 includes rounding the input itself (see docs/decisions.md)
-  bench b{"cufftdx_block_fft", c, N, fpb, fp16 ? 1e-2 : 1e-5, label};
+  char key[64];
+  std::snprintf(key, sizeof key, "cufftdx:%s:%u", fp16 ? "fp16" : "fp32", N);
+  bench b{"cufftdx_block_fft", c, N, fpb, fp16 ? 1e-2 : 1e-5, label, key};
   if (!fits) {
     skip(f, b, prov, "shared memory");
     return true;
   }
-  return measure<IO>(f, b, a.check, prov, [&](const dbuf<IO>& x, dbuf<IO>& y) {
+  return measure<IO>(f, b, a, prov, [&](const dbuf<IO>& x, dbuf<IO>& y) {
     const size_t grid = x.n / N / fpb;
     kernel<<<unsigned(grid), FFT::block_dim, FFT::shared_memory_size>>>(x.p, y.p);
     return grid;

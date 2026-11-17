@@ -181,7 +181,9 @@ bool run(const args& a, FILE* f, const std::string& prov) {
   std::snprintf(label, sizeof label, "monarch %s N=%5u %3ux%-3u fpb=%2u smem=%6u", fp16 ? "fp16" : "fp32", n, N1,
                 N2, fpb, M::smem);
   // same sanity bounds as the cuFFTDx baseline
-  bench b{"monarch_block_fft", c, n, fpb, fp16 ? 1e-2 : 1e-5, label};
+  char key[64];
+  std::snprintf(key, sizeof key, "monarch:%s:%u:%ux%u", fp16 ? "fp16" : "fp32", n, N1, N2);
+  bench b{"monarch_block_fft", c, n, fpb, fp16 ? 1e-2 : 1e-5, label, key};
   if (!fits || occ == 0) {
     skip(f, b, prov, "shared memory");
     return true;
@@ -195,7 +197,7 @@ bool run(const args& a, FILE* f, const std::string& prov) {
   CUDA_CHECK(cudaGetLastError());
 
   const size_t resident = size_t(occ) * sm_count();
-  return measure<io>(f, b, a.check, prov, [&](const dbuf<io>& x, dbuf<io>& y) {
+  return measure<io>(f, b, a, prov, [&](const dbuf<io>& x, dbuf<io>& y) {
     const size_t groups = x.n / n / fpb;
     const size_t grid = std::min(groups, resident);
     kernel<<<unsigned(grid), threads, M::smem>>>(x.p, y.p, f1.p, f2.p, tw.p, unsigned(groups));

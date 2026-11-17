@@ -211,6 +211,27 @@ constexpr int acc_seeds = 5;
 constexpr size_t acc_ffts = 64;
 constexpr size_t big_batch = 1 << 14;
 
+struct args {
+  bool check = false;
+  bool profile = false;      // one throughput-batch launch per configuration, no accuracy or timing
+  const char* only = nullptr;  // run just the configuration with this key, e.g. monarch:fp16:4096:64x64
+  const char* out = nullptr;
+};
+
+inline bool parse_args(int argc, char** argv, args& a) {
+  for (int i = 1; i < argc; ++i) {
+    if (!std::strcmp(argv[i], "--check")) a.check = true;
+    else if (!std::strcmp(argv[i], "--profile")) a.profile = true;
+    else if (!std::strcmp(argv[i], "--only") && i + 1 < argc) a.only = argv[++i];
+    else if (!std::strcmp(argv[i], "--out") && i + 1 < argc) a.out = argv[++i];
+    else {
+      std::fprintf(stderr, "usage: %s [--check] [--profile] [--only key] [--out results.jsonl]\n", argv[0]);
+      return false;
+    }
+  }
+  return true;
+}
+
 struct bench {
   const char* experiment;
   std::string cfg;  // JSON members describing the kernel configuration
@@ -218,12 +239,24 @@ struct bench {
   size_t group;     // FFTs handled together; batches are multiples of it
   double tol;       // sanity bound on the median rel L2, not an expected value
   std::string label;
+  std::string key;  // impl:prec:n[:n1xn2], matched by --only
 };
 
 // Accuracy against the FP64 cuFFT reference, then timing at batch = group (latency) and ~2^14 (throughput).
 // launch(x, y) runs the kernel on x.n / n FFTs and returns the grid size it used.
 template <class IO, class Launch>
-bool measure(FILE* f, const bench& b, bool check, const std::string& prov, Launch launch) {
+bool measure(FILE* f, const bench& b, const args& a, const std::string& prov, Launch launch) {
+  if (a.only && b.key != a.only) return true;
+  if (a.profile) {
+    // for Nsight Compute: exactly one launch of this kernel, at the throughput batch
+    dbuf<IO> xb(round_up(big_batch, b.group) * b.n), yb(xb.n);
+    fill_random(xb, 0);
+    launch(xb, yb);
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+    std::fprintf(stderr, "%s  profiled one launch, batch %zu\n", b.label.c_str(), xb.n / b.n);
+    return true;
+  }
   const size_t ab = round_up(acc_ffts, b.group);
   dbuf<double2> x64(ab * b.n), r64(ab * b.n);
   dbuf<IO> x(ab * b.n), y(ab * b.n);
@@ -242,7 +275,7 @@ bool measure(FILE* f, const bench& b, bool check, const std::string& prov, Launc
   const double rel_med = quantile(rel, 0.5), mx_med = quantile(mx, 0.5);
   const bool pass = rel_med < b.tol;
   std::fprintf(stderr, "%s  rel_l2=%.3e max_abs=%.3e  %s\n", b.label.c_str(), rel_med, mx_med, pass ? "ok" : "FAIL");
-  if (check) return pass;
+  if (a.check) return pass;
 
   char acc[256];
   std::snprintf(acc, sizeof acc,
@@ -288,19 +321,3 @@ inline int sm_count() {
   return v;
 }
 
-struct args {
-  bool check = false;
-  const char* out = nullptr;
-};
-
-inline bool parse_args(int argc, char** argv, args& a) {
-  for (int i = 1; i < argc; ++i) {
-    if (!std::strcmp(argv[i], "--check")) a.check = true;
-    else if (!std::strcmp(argv[i], "--out") && i + 1 < argc) a.out = argv[++i];
-    else {
-      std::fprintf(stderr, "usage: %s [--check] [--out results.jsonl]\n", argv[0]);
-      return false;
-    }
-  }
-  return true;
-}

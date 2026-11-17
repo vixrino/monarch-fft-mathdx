@@ -508,3 +508,24 @@ docs/results.md and docs/figures/tesla_t4/ are generated from it by
 table matches the per-binary runs (fp16 Monarch MMA > 0, all else 0).
 Plot fix after seeing it: a skipped N (fp32 Monarch 2048) now breaks the line
 instead of being drawn through.
+
+## Phase 4b: Nsight Compute
+
+### Profiling one configuration
+Both binaries take `--only <key>` (`monarch:fp16:4096:64x64`,
+`cufftdx:fp16:256`, ...) and `--profile`, which skips accuracy and timing
+and launches the FFT kernel once at the throughput batch (~2^14 FFTs).
+`scripts/profile.sh` runs `ncu --set full -k regex:'monarch_fft|block_fft'
+--launch-count 1` on that. The kernel filter drops the table, fill and cuFFT
+reference kernels, so the one profiled launch is the right one without
+counting launches. I rejected `--launch-skip` on the normal run (5 accuracy +
+55 + 55 timing launches): it silently profiles the wrong launch if the
+harness changes.
+The raw page of every metric goes to `results/<gpu>/<date>_ncu_<key>.csv`,
+unedited. `.ncu-rep` files are git-ignored because they are large binaries;
+the CSV holds the same metric values. `scripts/ncu_summary.py` prints a fixed
+set of metrics by name pattern (time, SOL, occupancy and its limiters, pipe
+utilization including tensor, shared-memory bank conflicts, stall reasons),
+so I don't have to guess which names the Turing ncu exports.
+Configurations profiled: Monarch fp16 64×64 (0.39× cuFFTDx) and 16×16
+(1.19×), plus cuFFTDx fp16 at N = 4096 and 256 as references.
