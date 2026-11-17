@@ -34,8 +34,9 @@ struct monarch {
   static_assert(sizeof(data) == sizeof(io), "smem element and global element must share the (re, im) layout");
   // suggested layouts are what reach HMMA on sm_75 (mma_probe.cu, docs/decisions.md); fp32 has no tensor cores
   static constexpr bool suggest = std::is_same_v<T, __half>;
-  // with plain row-major B layouts one n x n table serves both GEMMs; the suggested ones depend on the full GEMM shape
-  static constexpr bool share_f = N1 == N2 && !suggest;
+  // n1 == n2 makes g1 and g2 the same type, so both GEMMs see F through the same B layout and one table serves both
+  static constexpr bool share_f = N1 == N2;
+  static_assert(!share_f || std::is_same_v<g1, g2>, "a shared F table needs identical B layouts");
   static constexpr unsigned f_elems = N1 * N1 + (share_f ? 0 : N2 * N2);
   static constexpr unsigned smem = (f_elems + FPB * n) * sizeof(data);
 };

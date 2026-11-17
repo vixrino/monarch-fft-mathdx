@@ -559,3 +559,12 @@ fp16, as it already does in fp32. For 64×64 that cuts shared memory from
 allow 4). After that, look at the bank conflicts in the epilogue stores
 (writes through the swizzled A2 layout in fragment order) and in the
 transposed output write `buf[f*n + j1 + n1*j2]` (stride n1).
+
+### Share F in fp16 when n1 == n2
+`share_f = N1 == N2`, no longer `&& !suggest`. Since GEMM 1 was transposed,
+g1 = gemm<T, fpb·n2, n1, n1> and g2 = gemm<T, fpb·n1, n2, n2> are the same
+type when n1 == n2, so `suggest_layout_smem_b()` is the same layout for both.
+A `static_assert(std::is_same_v<g1, g2>)` guards this. Expected shared memory
+for fp16: 16×16 18432 → 17408 B, 32×32 24576 → 20480 B, 64×64 49152 →
+32768 B. fp32 is unchanged. Whether 64×64 then gets 2 blocks per SM is
+for the run to show (blocks_per_sm in the sweep, occupancy limit in ncu).
