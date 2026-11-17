@@ -5,7 +5,7 @@ table, produced by `scripts/sweep.py` and turned into tables and figures by
 `scripts/plot.py --tables`. Statements tagged *(interpretation)* are my
 reading of the numbers, not measurements.
 
-Sweep file: `results/tesla_t4/2026-11-17_sweep.jsonl` (commit d481e92, one Colab session, tables printed by `python3 scripts/plot.py --tables`).
+Sweep file: `results/tesla_t4/2026-11-17_sweep_3.jsonl` (commit 38e465c, one Colab session, tables printed by `python3 scripts/plot.py --tables`). Earlier sweeps of older kernel versions are kept in `results/tesla_t4/`; docs/decisions.md says what changed between them.
 
 ## Question
 
@@ -58,39 +58,39 @@ Batch 16384 FFTs. Monarch row = fastest factorization at that N.
 
 | prec | N | cuFFTDx GB/s [IQR] | Monarch n1xn2 | Monarch GB/s [IQR] | Monarch / cuFFTDx | cuFFTDx rel L2 | Monarch rel L2 |
 |---|---:|---:|---|---:|---:|---:|---:|
-| fp16 | 256 | 162.4 [161.5, 163.8] | 16x16 | 192.8 [190.7, 195.2] | 1.19 | 1.64e-03 | 3.73e-04 |
-| fp16 | 512 | 186.1 [185.1, 187.6] | 16x32 | 192.5 [191.6, 193.4] | 1.03 | 1.22e-03 | 3.74e-04 |
-| fp16 | 1024 | 183.0 [181.8, 183.4] | 32x32 | 165.6 [165.2, 167.4] | 0.90 | 1.97e-03 | 3.79e-04 |
-| fp16 | 2048 | 220.2 [218.9, 222.1] | 64x32 | 104.4 [103.2, 108.8] | 0.47 | 2.12e-03 | 3.80e-04 |
-| fp16 | 4096 | 228.8 [226.3, 229.7] | 64x64 | 90.3 [89.8, 90.8] | 0.39 | 2.30e-03 | 3.81e-04 |
-| fp16 | 8192 | 242.1 [241.0, 242.7] | - | - | - | 2.44e-03 | - |
-| fp16 | 16384 | 206.4 [205.2, 206.9] | - | - | - | 2.51e-03 | - |
-| fp32 | 256 | 211.8 [211.2, 212.8] | 16x16 | 86.8 [86.6, 86.9] | 0.41 | 1.38e-07 | 1.39e-07 |
-| fp32 | 512 | 231.4 [230.8, 231.9] | 32x16 | 72.3 [71.7, 72.9] | 0.31 | 1.71e-07 | 1.71e-07 |
-| fp32 | 1024 | 231.6 [231.5, 231.9] | 32x32 | 61.8 [61.4, 61.8] | 0.27 | 1.85e-07 | 1.98e-07 |
-| fp32 | 2048 | 230.6 [229.1, 231.2] | - | - | - | 1.79e-07 | - |
-| fp32 | 4096 | 236.1 [235.9, 236.3] | 64x64 | 33.9 [33.7, 34.0] | 0.14 | 1.87e-07 | 2.81e-07 |
-| fp32 | 8192 | 236.1 [235.9, 236.3] | - | - | - | 2.43e-07 | - |
-| fp32 | 16384 | 214.9 [214.4, 215.3] | - | - | - | 2.21e-07 | - |
+| fp16 | 256 | 160.6 [159.0, 163.9] | 16x16 | 196.4 [193.7, 198.1] | 1.22 | 1.64e-03 | 3.73e-04 |
+| fp16 | 512 | 186.8 [186.2, 187.3] | 16x32 | 193.3 [192.2, 193.9] | 1.03 | 1.22e-03 | 3.74e-04 |
+| fp16 | 1024 | 182.5 [182.0, 182.7] | 32x32 | 184.1 [181.7, 184.9] | 1.01 | 1.97e-03 | 3.79e-04 |
+| fp16 | 2048 | 219.7 [219.0, 220.7] | 64x32 | 105.3 [104.5, 112.2] | 0.48 | 2.12e-03 | 3.80e-04 |
+| fp16 | 4096 | 228.6 [226.6, 229.1] | 64x64 | 103.9 [101.8, 104.3] | 0.45 | 2.30e-03 | 3.81e-04 |
+| fp16 | 8192 | 243.1 [242.5, 243.4] | - | - | - | 2.44e-03 | - |
+| fp16 | 16384 | 206.5 [205.4, 207.7] | - | - | - | 2.51e-03 | - |
+| fp32 | 256 | 208.7 [207.4, 210.0] | 16x16 | 86.9 [86.0, 87.2] | 0.42 | 1.38e-07 | 1.39e-07 |
+| fp32 | 512 | 227.7 [227.3, 228.3] | 16x32 | 73.4 [72.5, 73.5] | 0.32 | 1.71e-07 | 1.71e-07 |
+| fp32 | 1024 | 229.4 [228.8, 229.9] | 32x32 | 62.2 [61.8, 62.4] | 0.27 | 1.85e-07 | 1.98e-07 |
+| fp32 | 2048 | 231.4 [230.8, 231.6] | - | - | - | 1.79e-07 | - |
+| fp32 | 4096 | 235.5 [235.1, 235.7] | 64x64 | 34.2 [34.0, 34.4] | 0.15 | 1.87e-07 | 2.81e-07 |
+| fp32 | 8192 | 235.7 [235.6, 235.8] | - | - | - | 2.43e-07 | - |
+| fp32 | 16384 | 214.2 [213.7, 215.2] | - | - | - | 2.21e-07 | - |
 
 Every Monarch configuration (batch 16384):
 
 | prec | N | n1xn2 | FFTs/block | smem B | blocks/SM | GB/s | rel L2 | max abs |
 |---|---:|---|---:|---:|---:|---:|---:|---:|
-| fp16 | 256 | 8x32 | 16 | 20736 | 2 | 132.1 | 3.81e-04 | 1.87e-02 |
-| fp16 | 256 | 16x16 | 16 | 18432 | 3 | 192.8 | 3.73e-04 | 2.09e-02 |
-| fp16 | 512 | 16x32 | 8 | 21504 | 3 | 192.5 | 3.74e-04 | 2.96e-02 |
-| fp16 | 512 | 32x16 | 8 | 21504 | 3 | 183.8 | 3.73e-04 | 2.76e-02 |
-| fp16 | 1024 | 32x32 | 4 | 24576 | 2 | 165.6 | 3.79e-04 | 4.11e-02 |
-| fp16 | 2048 | 32x64 | 2 | 36864 | 1 | 103.6 | 3.79e-04 | 6.18e-02 |
-| fp16 | 2048 | 64x32 | 2 | 36864 | 1 | 104.4 | 3.80e-04 | 5.85e-02 |
-| fp16 | 4096 | 64x64 | 1 | 49152 | 1 | 90.3 | 3.81e-04 | 9.20e-02 |
-| fp32 | 256 | 8x32 | 16 | 41472 | 1 | 77.1 | 1.55e-07 | 1.19e-05 |
-| fp32 | 256 | 16x16 | 16 | 34816 | 1 | 86.8 | 1.39e-07 | 9.18e-06 |
-| fp32 | 512 | 16x32 | 8 | 43008 | 1 | 71.8 | 1.71e-07 | 1.93e-05 |
-| fp32 | 512 | 32x16 | 8 | 43008 | 1 | 72.3 | 1.71e-07 | 1.46e-05 |
-| fp32 | 1024 | 32x32 | 4 | 40960 | 1 | 61.8 | 1.98e-07 | 2.71e-05 |
-| fp32 | 4096 | 64x64 | 1 | 65536 | 1 | 33.9 | 2.81e-07 | 8.52e-05 |
+| fp16 | 256 | 8x32 | 16 | 20736 | 2 | 132.9 | 3.81e-04 | 1.87e-02 |
+| fp16 | 256 | 16x16 | 16 | 17408 | 3 | 196.4 | 3.73e-04 | 2.09e-02 |
+| fp16 | 512 | 16x32 | 8 | 21504 | 3 | 193.3 | 3.74e-04 | 2.96e-02 |
+| fp16 | 512 | 32x16 | 8 | 21504 | 3 | 181.8 | 3.73e-04 | 2.76e-02 |
+| fp16 | 1024 | 32x32 | 4 | 20480 | 3 | 184.1 | 3.79e-04 | 4.11e-02 |
+| fp16 | 2048 | 32x64 | 2 | 36864 | 1 | 104.5 | 3.79e-04 | 6.18e-02 |
+| fp16 | 2048 | 64x32 | 2 | 36864 | 1 | 105.3 | 3.80e-04 | 5.85e-02 |
+| fp16 | 4096 | 64x64 | 1 | 32768 | 2 | 103.9 | 3.81e-04 | 9.20e-02 |
+| fp32 | 256 | 8x32 | 16 | 41472 | 1 | 74.8 | 1.55e-07 | 1.19e-05 |
+| fp32 | 256 | 16x16 | 16 | 34816 | 1 | 86.9 | 1.39e-07 | 9.18e-06 |
+| fp32 | 512 | 16x32 | 8 | 43008 | 1 | 73.4 | 1.71e-07 | 1.93e-05 |
+| fp32 | 512 | 32x16 | 8 | 43008 | 1 | 73.0 | 1.71e-07 | 1.46e-05 |
+| fp32 | 1024 | 32x32 | 4 | 40960 | 1 | 62.2 | 1.98e-07 | 2.71e-05 |
+| fp32 | 4096 | 64x64 | 1 | 65536 | 1 | 34.2 | 2.81e-07 | 8.52e-05 |
 | fp32 | 2048 | 32x64 | 2 | 73728 | - | skipped: shared memory | | |
 | fp32 | 2048 | 64x32 | 2 | 73728 | - | skipped: shared memory | | |
 
@@ -108,34 +108,34 @@ Numbers: the rel L2 columns of the two tables above.
 
 | prec | impl | N | n1xn2 | FFTs | median us [IQR] |
 |---|---|---:|---|---:|---:|
-| fp16 | cufftdx | 256 |  | 8 | 6.8 [6.4, 7.5] |
-| fp16 | monarch | 256 | 8x32 | 16 | 14.9 [14.6, 15.6] |
-| fp16 | monarch | 256 | 16x16 | 16 | 11.3 [10.8, 11.9] |
-| fp16 | cufftdx | 512 |  | 4 | 6.1 [6.0, 6.2] |
-| fp16 | monarch | 512 | 16x32 | 8 | 11.9 [11.2, 12.3] |
-| fp16 | monarch | 512 | 32x16 | 8 | 13.5 [12.8, 14.1] |
-| fp16 | cufftdx | 1024 |  | 2 | 6.7 [6.4, 7.4] |
-| fp16 | monarch | 1024 | 32x32 | 4 | 14.3 [14.3, 14.6] |
-| fp16 | cufftdx | 2048 |  | 2 | 8.1 [7.6, 8.5] |
-| fp16 | monarch | 2048 | 32x64 | 2 | 15.2 [14.8, 16.0] |
-| fp16 | monarch | 2048 | 64x32 | 2 | 15.1 [14.7, 15.7] |
-| fp16 | cufftdx | 4096 |  | 2 | 8.7 [8.5, 9.4] |
-| fp16 | monarch | 4096 | 64x64 | 1 | 16.7 [16.4, 17.6] |
-| fp16 | cufftdx | 8192 |  | 2 | 14.8 [14.4, 15.4] |
-| fp16 | cufftdx | 16384 |  | 2 | 25.8 [25.1, 26.2] |
-| fp32 | cufftdx | 256 |  | 4 | 7.1 [6.7, 7.8] |
-| fp32 | monarch | 256 | 8x32 | 16 | 31.3 [30.8, 32.1] |
-| fp32 | monarch | 256 | 16x16 | 16 | 24.0 [23.2, 24.5] |
-| fp32 | cufftdx | 512 |  | 2 | 7.3 [6.7, 7.9] |
-| fp32 | monarch | 512 | 16x32 | 8 | 30.7 [30.4, 30.7] |
-| fp32 | monarch | 512 | 32x16 | 8 | 30.8 [30.7, 31.2] |
-| fp32 | cufftdx | 1024 |  | 1 | 8.2 [8.1, 8.3] |
-| fp32 | monarch | 1024 | 32x32 | 4 | 36.9 [36.9, 37.2] |
-| fp32 | cufftdx | 2048 |  | 1 | 9.2 [8.6, 10.0] |
-| fp32 | cufftdx | 4096 |  | 1 | 9.5 [8.9, 10.0] |
-| fp32 | monarch | 4096 | 64x64 | 1 | 66.0 [65.6, 66.8] |
-| fp32 | cufftdx | 8192 |  | 1 | 15.4 [14.7, 15.9] |
-| fp32 | cufftdx | 16384 |  | 1 | 24.6 [24.6, 25.0] |
+| fp16 | cufftdx | 256 |  | 8 | 7.0 [6.6, 7.8] |
+| fp16 | monarch | 256 | 8x32 | 16 | 14.0 [13.2, 14.3] |
+| fp16 | monarch | 256 | 16x16 | 16 | 10.2 [9.9, 10.3] |
+| fp16 | cufftdx | 512 |  | 4 | 6.1 [5.9, 6.2] |
+| fp16 | monarch | 512 | 16x32 | 8 | 10.7 [10.4, 11.5] |
+| fp16 | monarch | 512 | 32x16 | 8 | 13.1 [12.3, 14.0] |
+| fp16 | cufftdx | 1024 |  | 2 | 6.4 [6.1, 7.0] |
+| fp16 | monarch | 1024 | 32x32 | 4 | 11.9 [11.2, 12.3] |
+| fp16 | cufftdx | 2048 |  | 2 | 7.1 [6.6, 7.7] |
+| fp16 | monarch | 2048 | 32x64 | 2 | 14.7 [14.5, 15.4] |
+| fp16 | monarch | 2048 | 64x32 | 2 | 15.1 [14.6, 16.1] |
+| fp16 | cufftdx | 4096 |  | 2 | 9.2 [8.8, 9.8] |
+| fp16 | monarch | 4096 | 64x64 | 1 | 14.3 [14.1, 14.5] |
+| fp16 | cufftdx | 8192 |  | 2 | 14.4 [14.3, 15.0] |
+| fp16 | cufftdx | 16384 |  | 2 | 24.6 [24.4, 24.6] |
+| fp32 | cufftdx | 256 |  | 4 | 8.2 [7.9, 8.2] |
+| fp32 | monarch | 256 | 8x32 | 16 | 31.1 [30.8, 31.9] |
+| fp32 | monarch | 256 | 16x16 | 16 | 22.8 [22.6, 23.5] |
+| fp32 | cufftdx | 512 |  | 2 | 8.2 [8.1, 8.5] |
+| fp32 | monarch | 512 | 16x32 | 8 | 29.0 [28.7, 29.9] |
+| fp32 | monarch | 512 | 32x16 | 8 | 29.8 [29.1, 30.3] |
+| fp32 | cufftdx | 1024 |  | 1 | 9.1 [8.5, 9.5] |
+| fp32 | monarch | 1024 | 32x32 | 4 | 36.0 [35.1, 36.4] |
+| fp32 | cufftdx | 2048 |  | 1 | 8.3 [8.2, 8.8] |
+| fp32 | cufftdx | 4096 |  | 1 | 9.6 [8.6, 10.1] |
+| fp32 | monarch | 4096 | 64x64 | 1 | 66.4 [65.9, 67.0] |
+| fp32 | cufftdx | 8192 |  | 1 | 15.1 [14.6, 15.6] |
+| fp32 | cufftdx | 16384 |  | 1 | 24.7 [24.6, 25.9] |
 
 The two implementations put different numbers of FFTs
 in a block (cuFFTDx's suggestion vs 4096/N for Monarch), so this row compares
@@ -160,13 +160,13 @@ one launch of one block each, not equal work.
 | cufftdx | fp32 | 8192 |  | 0 | 228 | 0 | 1184 |
 | cufftdx | fp32 | 16384 |  | 0 | 228 | 0 | 1216 |
 | monarch | fp16 | 256 | 8x32 | 128 | 64 | 0 | 3944 |
-| monarch | fp16 | 256 | 16x16 | 128 | 64 | 0 | 2352 |
+| monarch | fp16 | 256 | 16x16 | 128 | 64 | 0 | 2264 |
 | monarch | fp16 | 512 | 16x32 | 192 | 64 | 0 | 2264 |
 | monarch | fp16 | 512 | 32x16 | 192 | 64 | 0 | 2200 |
-| monarch | fp16 | 1024 | 32x32 | 256 | 64 | 0 | 2192 |
+| monarch | fp16 | 1024 | 32x32 | 256 | 64 | 0 | 2104 |
 | monarch | fp16 | 2048 | 32x64 | 384 | 64 | 0 | 2440 |
 | monarch | fp16 | 2048 | 64x32 | 384 | 64 | 0 | 2480 |
-| monarch | fp16 | 4096 | 64x64 | 512 | 64 | 0 | 2744 |
+| monarch | fp16 | 4096 | 64x64 | 512 | 64 | 0 | 2656 |
 | monarch | fp32 | 256 | 8x32 | 0 | 5184 | 0 | 6320 |
 | monarch | fp32 | 256 | 16x16 | 0 | 4160 | 0 | 5224 |
 | monarch | fp32 | 512 | 16x32 | 0 | 6208 | 0 | 7336 |
@@ -186,73 +186,82 @@ GEMM divides a 32×16×8 warp tile (`docs/decisions.md`).
 
 ## Nsight Compute profile (fp16)
 
-Files: `results/tesla_t4/2026-11-17_ncu_*.csv` (raw pages, commit ea51822).
-They were produced by `scripts/profile.sh` with `ncu --set full`: one launch at batch 16384 per configuration.
-The table is built from those CSVs.
+Files: `results/tesla_t4/2026-11-17_ncu_*_2.csv` for the current kernels
+(commit 38e465c). Monarch 64×64 before the shared-F change comes from
+`2026-11-17_ncu_monarch_fp16_4096_64x64.csv` (commit ea51822). All were
+produced by `scripts/profile.sh` with `ncu --set full`, one launch at batch
+16384 each; the table is built from those CSVs.
 
-| metric | cuFFTDx N=256 | Monarch 16×16 | cuFFTDx N=4096 | Monarch 64×64 |
-|---|---:|---:|---:|---:|
-| SM clock under ncu (MHz) | 581 | 585 | 579 | 585 |
-| SM cycles elapsed (avg) | 95k | 160k | 1319k | 6517k |
-| grid (blocks) | 2,048 | 120 | 8,192 | 40 |
-| warps active per SM (of 32) | 25.1 | 11.2 | 23.6 | 4.0 |
-| occupancy limit: shared mem / registers (blocks) | 16 / 14 | 3 / 4 | 4 / 3 | 1 / 4 |
-| issue active (% of peak) | 21 | 44 | 33 | 19 |
-| instructions executed | 2.9M | 10.8M | 70.1M | 199.4M |
-| tensor pipe active (%) | 0.4 | 18.6 | 0.9 | 26.4 |
-| fp16 pipe (% of peak) | 24.4 | 4.2 | 42.3 | 1.6 |
-| ALU pipe (% of peak) | 9.1 | 46.9 | 11.1 | 16.7 |
-| memory throughput (% of peak) | 83 | 45 | 85 | 38 |
-| DRAM read + write (MB) | 42 | 39 | 616 | 632 |
-| smem load wavefronts / bank conflicts | 0.28M / 0.15M | 0.75M / 0.06M | 4.42M / 0.23M | 44.61M / 25.73M |
-| smem store wavefronts / bank conflicts | 0.54M / 0.41M | 1.33M / 0.94M | 13.00M / 8.79M | 34.19M / 27.90M |
+| metric | cuFFTDx N=256 | Monarch 16×16 | cuFFTDx N=4096 | Monarch 64×64, separate F (ea51822) | Monarch 64×64, shared F (38e465c) |
+|---|---:|---:|---:|---:|---:|
+| shared memory per block (KB) | 4.1 | 17.4 | 16.4 | 49.2 | 32.8 |
+| occupancy limit: shared mem / registers (blocks) | 16 / 14 | 3 / 4 | 4 / 3 | 1 / 4 | 2 / 4 |
+| warps active per SM (of 32) | 24.6 | 11.2 | 23.4 | 4.0 | 7.6 |
+| SM cycles elapsed (avg, at ~585 MHz) | 94k | 159k | 1325k | 6517k | 5371k |
+| issue active (% of peak) | 21 | 44 | 33 | 19 | 23 |
+| instructions executed | 2.9M | 10.8M | 70.1M | 199.4M | 199.4M |
+| tensor pipe active (%) | 0.4 | 18.8 | 0.9 | 26.4 | 32.9 |
+| fp16 pipe (% of peak) | 24.3 | 4.3 | 42.3 | 1.6 | 2.0 |
+| ALU pipe (% of peak) | 9.1 | 47.2 | 11.0 | 16.7 | 20.3 |
+| memory throughput (% of peak) | 82 | 45 | 85 | 38 | 47 |
+| DRAM read + write (MB) | 42 | 39 | 616 | 632 | 662 |
+| smem load wavefronts / bank conflicts | 0.28M / 0.15M | 0.74M / 0.06M | 4.42M / 0.23M | 44.61M / 25.73M | 44.61M / 25.74M |
+| smem store wavefronts / bank conflicts | 0.54M / 0.41M | 1.33M / 0.93M | 12.99M / 8.80M | 34.19M / 27.90M | 34.12M / 27.80M |
 
 Caveat: ncu locks the SM clock to base (about 585 MHz) during profiling,
 while the timed runs use boost clocks. This slows the compute-bound Monarch
 kernels more than the memory-bound cuFFTDx ones: under ncu, Monarch 16×16
 takes more cycles than cuFFTDx N=256, although it is 1.2× faster in the timed
-sweep. So I read only ratios and utilizations from this table, not durations
-across kernels.
+sweep. Across kernels I read only ratios and utilizations from this table. The
+two Monarch 64×64 columns are the same kernel shape at the same clock, so
+their cycle counts can be compared.
 
 Measured:
-- **Monarch 64×64 has one 128-thread block per SM.** That is 4 warps active out
-  of 32, i.e. one warp per scheduler. The limit is shared memory: 48 KB per
-  block, one block fits. Issue slots are 19 % active.
-- **Shared-memory traffic in Monarch 64×64:**
-  - 44.6M load wavefronts and 34.2M store wavefronts, against 4.4M and 13.0M
-    for cuFFTDx N=4096.
-  - Bank conflicts: 25.7M on loads and 27.9M on stores.
-- **Instructions executed:** 199M for Monarch 64×64 vs 70M for cuFFTDx (2.8×).
-- **DRAM traffic is the same** for both at N=4096 (616 vs 632 MB). cuFFTDx runs
-  at 85 % of peak memory throughput, Monarch 64×64 at 38 %.
-- **The tensor pipe is active 26 % (64×64) and 19 % (16×16)** for Monarch, and
+- **Monarch 64×64, shared F table vs separate.** Shared memory went from 48 KB
+  to 32 KB per block. The shared-memory limit went from 1 to 2 blocks per SM,
+  and warps active from 4.0 to 7.6. SM cycles dropped 18 %, from 6517k to 5371k.
+  The instruction count is unchanged (199.4M), and so is the shared-memory traffic.
+- **The memory system is not what limits Monarch.** Even at 2 blocks per SM,
+  Monarch 64×64 reaches 47 % of peak memory throughput, against cuFFTDx's 85 %,
+  for about the same DRAM bytes. It also executes 2.8× cuFFTDx's instructions.
+- **Shared-memory traffic** in Monarch 64×64: 44.6M load and 34.1M store
+  wavefronts, against 4.4M and 13.0M for cuFFTDx N=4096. Bank conflicts: 25.7M
+  on loads and 27.8M on stores.
+- **The tensor pipe is active 33 % (64×64) and 19 % (16×16)** for Monarch, and
   under 1 % for cuFFTDx. This confirms the SASS evidence with a runtime counter.
-- **Monarch 16×16** runs 11 warps per SM (limit: 3 blocks by shared memory).
-  Its ALU pipe is the busiest at 47 % of peak.
 
 ## Findings
 
 Measured (sweep file above):
 
-1. **fp16 throughput: Monarch is faster up to N = 512 and slower from N = 1024.**
-   - N = 256: 192.8 vs 162.4 GB/s (1.19×).
-   - N = 512: 192.5 vs 186.1 GB/s (1.03×). The IQRs do not overlap at either size.
-   - N = 1024: 0.90×. N = 2048: 0.47×. N = 4096: 0.39×.
-   - So the crossover lies between N = 512 and N = 1024 at batch 16384.
+1. **fp16 throughput: Monarch is faster at N = 256 and 512, equal at N = 1024, and slower beyond.**
+   - N = 256: 196.4 vs 160.6 GB/s (1.22×).
+   - N = 512: 193.3 vs 186.8 GB/s (1.03×). The IQRs do not overlap at either size.
+   - N = 1024: 184.1 vs 182.5 GB/s (1.01×). The IQRs overlap, so this is a tie.
+   - N = 2048: 0.48×. N = 4096: 0.45×.
+   - So the crossover is at about N = 1024, at batch 16384.
 2. **fp16 accuracy: Monarch's relative L2 error is 3.7–3.8e-4 at every N.**
    cuFFTDx fp16 is 1.2e-3 to 2.5e-3 and grows with N. The ratio
    cuFFTDx / Monarch is 3.3× (N = 512) to 6.0× (N = 4096), on the same inputs
    and the same FP64 reference.
-3. **fp32: Monarch is 0.14–0.41× cuFFTDx's throughput.** The errors are equal
+3. **fp32: Monarch is 0.15–0.42× cuFFTDx's throughput.** The errors are equal
    at N = 256 and 512 and higher for Monarch at 1024 (1.98e-7 vs 1.85e-7) and
    4096 (2.81e-7 vs 1.87e-7).
-4. **Latency (one block):** Monarch takes 11–17 µs in fp16 and 24–66 µs in fp32;
-   cuFFTDx takes 6–9 µs for N ≤ 4096. Different FFT counts per block, see above.
+4. **Latency (one block):** Monarch takes 10–15 µs in fp16 and 23–66 µs in fp32;
+   cuFFTDx takes 6–10 µs for N ≤ 4096. Different FFT counts per block, see above.
 5. **Factorization matters.**
-   - fp16 N = 256: 16×16 runs at 192.8 GB/s, 8×32 at 132.1. The 8×32 GEMM 1 is
-     not on HMMA and its kernel has 3944 static instructions vs 2352.
-   - N = 512: 16×32 is 5 % faster than 32×16.
-   - N = 2048: the two orders are within the IQR.
+   - fp16 N = 256: 16×16 runs at 196.4 GB/s, 8×32 at 132.9. The 8×32 GEMM 1 is
+     not on HMMA and its kernel has 3944 static instructions vs 2264.
+   - N = 512: 16×32 is 6 % faster than 32×16, with IQRs that do not overlap.
+   - N = 2048: the two orders are within each other's IQR.
+6. **Sharing the F table when n1 = n2 (commit 38e465c)** cut shared memory and
+   raised blocks per SM:
+   - 32×32: 2 → 3 blocks per SM, 164.2 → 184.1 GB/s;
+   - 64×64: 1 → 2 blocks per SM, 92.5 → 103.9 GB/s.
+
+   The before numbers are from `2026-11-17_sweep_2.jsonl`, a different session.
+   Same-kernel throughputs moved by −1.2 % to +6.6 % between sessions, and both
+   gains are about 12 %. Accuracy is identical.
 
 Interpretation:
 
@@ -264,17 +273,16 @@ Interpretation:
   2.6–3.4e-4, close to the GPU numbers.
 - *(interpretation, supported by the ncu table)* cuFFTDx is memory-bound at
   N = 4096 (85 % of peak memory throughput). Monarch 64×64 is not: it moves
-  the same DRAM bytes at 38 %. At N = 4096 its time goes into the block itself,
-  for three reasons:
-  - with one warp per scheduler, there is nothing to hide shared-memory and
-    tensor-core latency (19 % issue active);
-  - it executes 2.8× the instructions, because the dense DFT costs
-    N·(n1 + n2) complex multiply-adds per FFT against O(N log N);
-  - its shared-memory traffic is about 4.5× cuFFTDx's, more than half of it
-    bank-conflict replays.
-
-  I have not separated these three effects. The shared-memory limit is the
-  first thing to change (see next step in docs/decisions.md).
+  about the same DRAM bytes at 47 %. Its time goes into the block itself.
+  Doubling the resident warps (1 → 2 blocks per SM) bought 18 % fewer cycles
+  under ncu and about 12 % in the timed sweep, so occupancy was part of it but
+  not all. What remains:
+  - 2.8× cuFFTDx's instructions, because the dense DFT costs N·(n1 + n2)
+    complex multiply-adds per FFT against O(N log N);
+  - about 4.5× its shared-memory wavefronts, more than half of them
+    bank-conflict replays. These did not change with the shared F table, so
+    they come from the data path (load into A1, epilogue writes to A2, the
+    transposed output write), not from the F loads.
 - *(interpretation)* fp32 Monarch is slow because on sm_75 its GEMMs run on
   FFMA: 4160–16448 static FFMA vs 64–228 in cuFFTDx. Static counts are not
   executed counts, so this is an indication, not a measurement of work.

@@ -568,3 +568,21 @@ A `static_assert(std::is_same_v<g1, g2>)` guards this. Expected shared memory
 for fp16: 16×16 18432 → 17408 B, 32×32 24576 → 20480 B, 64×64 49152 →
 32768 B. fp32 is unchanged. Whether 64×64 then gets 2 blocks per SM is
 for the run to show (blocks_per_sm in the sweep, occupancy limit in ncu).
+
+### Shared-F run (Colab T4, commit 38e465c)
+Raw data: results/tesla_t4/2026-11-17_sweep_3.jsonl and
+2026-11-17_ncu_*_2.csv. ctest passed and every size passed `--check`, with
+accuracy identical to the previous sweep. Shared memory came out exactly as
+predicted (17408 / 20480 / 32768 B).
+- 32×32: 2 → 3 blocks per SM, 164.2 → 184.1 GB/s (vs sweep_2), now tied
+  with cuFFTDx (1.01×, IQRs overlap).
+- 64×64: 1 → 2 blocks per SM, 92.5 → 103.9 GB/s.
+- 16×16: 3 blocks per SM before and after (registers allow 4 and shared
+  memory 3), 195.0 → 196.4 GB/s, which is noise.
+- ncu, 64×64: warps active 4.0 → 7.6 per SM and SM cycles 6517k → 5371k
+  (−18 %, same base clock). Instructions and shared-memory wavefronts and
+  conflicts are unchanged.
+Remaining gap at N ≥ 2048 (0.45-0.48×): the instruction count and the
+data-path bank conflicts. Next candidates, in order:
+1. bank conflicts in the A2 epilogue writes and the transposed output write;
+2. 256 threads per block, to get more warps without more shared memory.

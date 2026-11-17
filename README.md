@@ -10,31 +10,30 @@ I measured this on one GPU, a Tesla T4 (sm_75), with MathDx 26.10
 
 ## Findings
 
-All numbers are from one sweep, `results/tesla_t4/2026-11-17_sweep.jsonl`, at a batch of 16384 FFTs.
+All numbers are from one sweep, `results/tesla_t4/2026-11-17_sweep_3.jsonl`, at a batch of 16384 FFTs.
 The full tables and method are in [docs/results.md](docs/results.md).
 
 ![throughput vs N](docs/figures/tesla_t4/throughput_vs_n.png)
 ![relative error vs N](docs/figures/tesla_t4/error_vs_n.png)
 
 - **fp16 operands with fp32 accumulation:** Monarch is faster than cuFFTDx fp16
-  at N = 256 (1.19×) and N = 512 (1.03×), and slower from N = 1024 on
-  (0.90× at 1024, 0.39× at 4096).
+  at N = 256 (1.22×) and N = 512 (1.03×). It ties at N = 1024 (1.01×, IQRs
+  overlap) and is slower beyond (0.48× at 2048, 0.45× at 4096).
 - **fp16 accuracy:** Monarch's relative L2 error against FP64 is 3.7–3.8e-4 at
   every N. cuFFTDx fp16 is 1.2e-3 to 2.5e-3 and grows with N, so Monarch is
   3.3× to 6.0× more accurate.
 - **fp32:** the T4 has no fp32 tensor cores, so Monarch's GEMMs run on FFMA. It
-  reaches 0.14–0.41× of cuFFTDx's throughput at about the same accuracy.
-- **Tensor cores, shown in SASS:** every fp16 Monarch kernel contains HMMA
-  instructions. The fp32 kernels and every cuFFTDx kernel contain none (the
-  table is in docs/results.md).
+  reaches 0.15–0.42× of cuFFTDx's throughput at about the same accuracy.
+- **Tensor cores, shown in SASS and in ncu:** every fp16 Monarch kernel contains
+  HMMA, and the tensor pipe is active 19–33 % at runtime. The fp32 kernels and
+  every cuFFTDx kernel contain none.
 - **Why Monarch slows down at large N (Nsight Compute, fp16 64×64):**
-  - shared memory (48 KB per block) allows one 128-thread block per SM, so
-    4 warps of 32 are active;
-  - it executes 2.8× cuFFTDx's instructions;
-  - shared-memory traffic is about 4.5× cuFFTDx's, with many bank conflicts.
-
-  cuFFTDx is at 85 % of peak memory throughput and Monarch at 38 %, for the
-  same DRAM bytes.
+  - cuFFTDx is memory-bound (85 % of peak); Monarch is not (47 %).
+  - Monarch executes 2.8× cuFFTDx's instructions.
+  - Its shared-memory traffic is about 4.5× cuFFTDx's, with many bank conflicts.
+  - Shared memory also limited occupancy. Sharing one F table between the two
+    GEMMs when n1 = n2 raised 64×64 from 1 to 2 blocks per SM, and the
+    throughput by about 12 %.
 
 One result I did not expect: with cuBLASDx's default shared-memory layouts the
 fp16 GEMMs compile to scalar HMUL2/FADD on sm_75, not HMMA. Only the
