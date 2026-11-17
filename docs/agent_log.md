@@ -39,3 +39,11 @@ Each entry: what the agent (Claude Code) got wrong, how it was caught, fix.
 - My first `sass_check.sh` call filtered on "monarch", which would also have
   hidden HMMAs in a non-inlined device function. The second run counted the
   whole binary to rule that out before concluding.
+
+- Phase 3: after switching to suggested layouts I assumed every fp16 GEMM
+  would reach HMMA. The suggested path only picks the MMA atom when the GEMM
+  shape divides warp tile × atom (32 × 16 × 8 for 128 threads on sm_75), so
+  GEMM 1 with M = n1 = 16 or 8 stayed on HMUL2/FADD. Caught by the per-kernel
+  static MMA counts (64 instead of ~128 for 16×16, with ~3× the instructions)
+  and confirmed with the opcode histogram; cause read in
+  suggested/suggested_supermma.hpp and suggested/common.hpp.

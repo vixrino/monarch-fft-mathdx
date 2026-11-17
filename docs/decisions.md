@@ -423,3 +423,30 @@ Raw data: results/tesla_t4/2026-11-17_monarch_block_fft_4.jsonl.
   ~2100-2800 for the other shapes, with only 64/128 MMA. One of their two
   GEMMs (a K = 16 one with a 16-wide side) may still be on a non-MMA path.
   Not checked yet: needs the per-kernel opcode histogram.
+
+### Why 8×32, 16×16 and 16×32 fp16 still had an FMA GEMM, and the transpose of GEMM 1
+Evidence (Colab T4, commit 2e5eade): `OPS=1 sass_check.sh` on the fp16 16×16
+kernel shows 2048 HMUL2 + 2048 FADD next to its 64 HMMA, so one of its two
+GEMMs is on the scalar path.
+
+Cause, in the headers: database/gemm/suggested/suggested_supermma.hpp,
+`get_best_supermma_tiled_instruction`, tiles the warps with
+`get_floor_tile(num_warps)` (suggested/common.hpp), which is (2, 2) for
+128 threads. `search_mma_list` (common.hpp) then keeps an MMA atom only if
+the GEMM shape is evenly divisible by warp tile × atom shape. For
+SM75_16x8x8_C32C16C16C32_TN that is 32 × 16 × 8, so M % 32, N % 16 and
+K % 8 must all hold; otherwise the instruction is void and the GEMM falls
+back to FMA. GEMM 1 was F_n1 @ B1 with M = n1, so n1 = 8 and n1 = 16 failed
+on M. GEMM 2 always had M = fpb·n1 ≥ 64 and passed.
+
+Fix: compute GEMM 1 as A1 @ F_n1 with A1 = (fpb·n2 × n1), the transpose of
+the old B1. Valid because F_n1 is symmetric, so (F_n1 @ B1)ᵀ = B1ᵀ @ F_n1.
+Both GEMMs now put the batch on M and the DFT size on N = K. Then
+- n1 = 16 passes (M = fpb·n2 ≥ 64, N = K = 16);
+- n1 = 8 still fails on N % 16. I keep 8×32 in the sweep as the
+  documented case where GEMM 1 stays on FMA; 16×16 covers N = 256 on HMMA.
+Alternatives: 64 threads (warp tile (2, 1), so N % 8 would pass for n1 = 8),
+but that halves the threads for every size; forcing the atom with
+`experimental::Tile` uses a `detail` type. Neither is worth it for one shape.
+Cost: none in smem; the load and epilogue index maps change, the GEMMs are the
+same size.
