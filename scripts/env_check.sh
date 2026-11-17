@@ -18,7 +18,7 @@ if [ -n "${MATHDX_ROOT:-}" ] && [ -d "$MATHDX_ROOT" ]; then
   echo "root: $MATHDX_ROOT"
   vf=$(find "$MATHDX_ROOT" -name 'mathdx-config-version.cmake' | head -1)
   if [ -n "$vf" ]; then
-    grep -m1 'PACKAGE_VERSION ' "$vf"
+    grep -m1 'set(PACKAGE_VERSION "' "$vf"
   else
     echo "mathdx-config-version.cmake not found; dir name: $(basename "$MATHDX_ROOT")"
   fi

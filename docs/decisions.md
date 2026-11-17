@@ -14,14 +14,17 @@ different MathDx versions, so every result records `mathdx_VERSION`.
 Unverified: whether 25.12.1-cuda12 behaves the same on sm_75 as 26.10; the
 current cuFFTDx docs list CUDA 13.0+ and SM75+ as requirements.
 
-### `mathdx::cublasdx_no_lto` instead of `mathdx::cublasdx`
-The default `mathdx::cublasdx` target links an LTO fatbin and requires
+### Header-only cuBLASDx target: `cublasdx_no_lto` on 26.x, `cublasdx` on 25.12
+In 26.x the default `mathdx::cublasdx` target links an LTO fatbin and requires
 `CUDA_SEPARABLE_COMPILATION` + `INTERPROCEDURAL_OPTIMIZATION` on the consumer;
 on CUDA < 13.2 one must use `mathdx::cublasdx_fatbin` instead. The fatbin is
 only needed for non-GEMM functions (TRSM etc.). The Monarch FFT only uses GEMM,
-so the header-only `no_lto` target is enough and keeps the build identical on
-CUDA 12 and 13. Source: cuBLASDx installation docs. Revisit if a GEMM feature
-I need turns out to depend on the fatbin.
+so the header-only `mathdx::cublasdx_no_lto` is enough.
+The 25.12.1-cuda12 package has no `_no_lto` (or `_fatbin`) target at all: its
+`lib/cmake/cublasdx/cublasdx-config.cmake` only links CUTLASS and commondx into
+`mathdx::cublasdx`, i.e. it is already header-only. CMake picks `_no_lto` when
+the target exists and falls back to `mathdx::cublasdx` otherwise. Evidence: I
+listed both tarballs and read their cmake configs (2026-11-17).
 
 ### `find_package(mathdx ... PATHS ${MATHDX_ROOT} NO_DEFAULT_PATH)`
 An explicit root and no default search path, so a stray install under
@@ -34,10 +37,17 @@ the PTX costs nothing and allows JIT on a newer GPU.
 
 ### cuFFTDx smoke test built from the package's own examples
 I build `convolution_performance` with NVIDIA's examples CMakeLists rather
-than copying it into this repo. The target name (`06_convolution_convolution_performance`)
-comes from the CUDALibrarySamples copy of that CMakeLists; the packaged copy may
-differ, so the notebook reads the target name back from `--target help`
-instead of hard-coding it.
+than copying it into this repo. The target is `06_convolution_convolution_performance` in the
+`example/cufftdx/CMakeLists.txt` of both 25.12.1 and 26.10.0 (`<dir>_<file>`);
+the notebook still reads it back from `--target help` so a rename in a later
+package does not break the runner.
+
+### Package layout differs from the installation docs
+The docs say the package unpacks to `<dir>/nvidia/mathdx/YY.MM/`. Both
+tarballs actually have one extra top-level directory:
+`nvidia-mathdx-25.12.1-cuda12/nvidia/mathdx/25.12/`. The first Colab run
+failed on this (`ls: cannot access '/content/mathdx/nvidia/mathdx/*/'`); the
+notebook now globs `$DX_DIR/*/nvidia/mathdx/*/`.
 
 ### ncu permission check in env_check.sh
 Colab and Kaggle run without root, and the driver defaults to restricting
