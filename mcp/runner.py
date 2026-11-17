@@ -80,7 +80,10 @@ class Runner:
         return self.run(argv, timeout=900)
 
     def binary(self, name):
-        return os.path.join(self.build, check(name, BINARIES + ("mma_probe",), "binary"))
+        path = os.path.join(self.build, check(name, BINARIES + ("mma_probe",), "binary"))
+        if not os.path.isfile(path):
+            raise Rejected(f"{os.path.relpath(path, self.repo)} is not built; call build(target={name!r}) first")
+        return path
 
     def check_accuracy(self, binary):
         return self.run([self.binary(binary), "--check"], timeout=600)

@@ -623,3 +623,18 @@ data-path bank conflicts. Next candidates, in order:
   - Locally without a GPU: `tests/test_mcp_runner.py` (25 tests: rejection, parsers on nvcc/gcc/CMake
     formats, a real timeout, an in-process session, a path-traversal attempt on the markdown resource).
   - On the GPU: `mcp/smoke_client.py` over stdio with three injected bugs. Not run yet.
+
+### First GPU run of the MCP smoke test (Colab T4, commit 6451672)
+Failed, for two reasons in my code, not in the kernels:
+- **Environment.** The SDK's stdio client starts the server with a reduced environment
+  (`DEFAULT_INHERITED_ENV_VARS` in mcp/client/stdio.py: PATH, HOME, ...). `LD_LIBRARY_PATH` is not in
+  it, and Colab finds the CUDA driver library through it. So `env_check` failed in 0.0 s, every CUDA
+  binary failed at load (`diagnose` reported stage "accuracy" on the clean repo, `benchmark` returned no
+  records), and only `sass_check` worked, since cuobjdump needs no driver. The smoke client now forwards
+  LD_LIBRARY_PATH and the CUDA variables, and mcp/README.md says to pass `-e LD_LIBRARY_PATH` when
+  registering the server.
+  The `diagnose` misreport is a lesson for the tool itself: a binary that cannot start looked like an
+  accuracy failure. The accuracy stage now returns stderr when no configuration line was parsed, so the
+  load error is visible.
+- **Unbuilt binary.** `run_tests` on a binary that was never built raised FileNotFoundError inside the
+  tool. It is now a clean rejection that says which `build` call to make.

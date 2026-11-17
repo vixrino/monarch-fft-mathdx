@@ -26,7 +26,11 @@ pip install -r mcp/requirements.txt
 DXB_REPO=$PWD MATHDX_ROOT=/path/to/nvidia/mathdx/26.10 python3 mcp/server.py
 ```
 
-Claude Code on the same machine: `claude mcp add dxbench -e DXB_REPO=$PWD -e MATHDX_ROOT=... -- python3 mcp/server.py`.
+Claude Code on the same machine:
+`claude mcp add dxbench -e DXB_REPO=$PWD -e MATHDX_ROOT=... -e LD_LIBRARY_PATH=$LD_LIBRARY_PATH -- python3 mcp/server.py`.
+MCP stdio clients start the server with a reduced environment (the Python SDK forwards PATH, HOME and a few
+others). If the CUDA driver library is found through `LD_LIBRARY_PATH`, as on Colab, pass it explicitly, or
+`nvidia-smi` and every CUDA binary fail inside the server while `sass_check` still works.
 
 Checks:
 - `tests/test_mcp_runner.py` runs without a GPU. It covers argument rejection (shell metacharacters,

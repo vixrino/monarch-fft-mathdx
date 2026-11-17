@@ -14,8 +14,11 @@ REPO = os.path.join(os.path.dirname(__file__), "..")
 
 
 @pytest.fixture
-def r(monkeypatch):
-    rn = runner.Runner(REPO, "/nonexistent/mathdx")
+def r(monkeypatch, tmp_path):
+    (tmp_path / "build_mcp").mkdir()
+    for b in runner.BINARIES:
+        (tmp_path / "build_mcp" / b).touch()  # runs are mocked; the files only need to exist
+    rn = runner.Runner(str(tmp_path), "/nonexistent/mathdx")
     calls = []
     monkeypatch.setattr(rn, "run", lambda argv, timeout: calls.append(argv) or runner.Result(argv, 0, 0.0, "", ""))
     rn.calls = calls
@@ -126,3 +129,9 @@ def test_mcp_session_in_process(monkeypatch):
             with pytest.raises(Exception, match="Unknown resource"):  # no path traversal out of the docs folder
                 await c.read_resource("mathdx://cublasdx/markdown/..%2F..%2Fsecret")
     asyncio.run(go())
+
+
+def test_unbuilt_binary_is_a_clean_rejection(tmp_path):
+    rn = runner.Runner(str(tmp_path), "")
+    with pytest.raises(runner.Rejected, match="not built"):
+        rn.check_accuracy("monarch_fft")

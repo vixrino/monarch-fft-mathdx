@@ -36,14 +36,21 @@ def copy_repo(bug):
     return dst
 
 
+# The SDK's stdio client forwards only a few safe variables (PATH, HOME, ...). The CUDA driver library is found
+# through LD_LIBRARY_PATH on Colab, so without it nvidia-smi and every CUDA binary fail inside the server.
+FORWARD = ("PATH", "LD_LIBRARY_PATH", "CUDA_HOME", "CUDA_VISIBLE_DEVICES", "HOME")
+
+
 def params(repo):
-    env = {"DXB_REPO": repo, "MATHDX_ROOT": os.environ["MATHDX_ROOT"], "PATH": os.environ["PATH"]}
+    env = {k: os.environ[k] for k in FORWARD if k in os.environ}
+    env.update(DXB_REPO=repo, MATHDX_ROOT=os.environ["MATHDX_ROOT"])
     return StdioServerParameters(command=sys.executable, args=[os.path.join(repo, "mcp", "server.py")], env=env)
 
 
 async def call(c, tool, **args):
     r = await c.call_tool(tool, args)
-    return json.loads(r.content[0].text)
+    text = r.content[0].text
+    return {"ok": False, "tool_error": text[:800]} if r.is_error else json.loads(text)
 
 
 def show(title, d, keys):
@@ -58,16 +65,18 @@ async def clean():
         llms = await c.read_resource("mathdx://cublasdx/llms.txt")
         print("cublasdx llms.txt first line:", llms.contents[0].text.splitlines()[0])
         e = await call(c, "env_check")
-        show("env_check", e, ["ok", "returncode", "seconds"])
+        show("env_check", {**e, "output": e.get("output", "")[-300:]}, ["ok", "returncode", "seconds", "output"])
         show("sass_check rejects a shell string", await call(c, "sass_check", binary="monarch_fft",
                                                               kernel_filter="x; rm -rf /"), ["ok", "rejected"])
         d = await call(c, "diagnose", binary="monarch_fft")
-        show("diagnose, clean repo", d, ["stage", "ok"])
+        show("diagnose, clean repo", d, ["stage", "ok", "failing", "mismatches", "stderr_tail", "fp16_kernels_without_mma"])
         s = await call(c, "sass_check", binary="monarch_fft", kernel_filter="__half")
         show("sass_check fp16 monarch", s, ["ok", "kernels_with_mma"])
         b = await call(c, "benchmark", binary="monarch_fft", key="monarch:fp16:256:16x16")
         rec = [(r["batch"], r["gbps_eff"], r["rel_l2_median"]) for r in b.get("records", [])]
-        show("benchmark monarch:fp16:256:16x16 (batch, GB/s, rel L2)", {**b, "records": rec}, ["ok", "records"])
+        show("benchmark monarch:fp16:256:16x16 (batch, GB/s, rel L2)", {**b, "records": rec}, ["ok", "records", "note"])
+        show("run_tests before building cufftdx", await call(c, "run_tests", binary="cufftdx_block_fft"), ["ok", "rejected"])
+        show("build cufftdx_block_fft", await call(c, "build", target="cufftdx_block_fft"), ["ok", "seconds", "errors"])
         t = await call(c, "run_tests", binary="cufftdx_block_fft")
         show("run_tests cufftdx", {**t, "n_configs": len(t.get("configs", []))}, ["ok", "n_configs", "mismatches"])
 
