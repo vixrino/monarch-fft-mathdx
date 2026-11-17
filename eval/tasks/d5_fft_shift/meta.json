@@ -1,0 +1,2 @@
+{"id": "d5_fft_shift", "split": "dev", "library": "cufftdx", "requires_mma": false,
+ "traps": ["output index remap in the store", "unnormalized forward", "batch not a multiple of FFTs per block"]}

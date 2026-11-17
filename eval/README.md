@@ -10,7 +10,8 @@ the same token budget and the same iteration budget:
 | B, + official docs | A + `search_docs` / `read_doc` over NVIDIA's docs and the installed MathDx headers |
 | C, + docs + MCP | B + `run_public_test`, `sass_check`, `diagnose` (the tools of `mcp/server.py`, pointed at the task) |
 
-Status: design and tasks are written; the harness that calls the model is not, and nothing has been run.
+Status: design and the 5 dev tasks are written (`eval/validate.py` checks them with the reference solutions).
+The held-out tasks and the harness that calls the model are not written yet. Nothing has been run.
 
 ## Why these three conditions
 
@@ -29,7 +30,8 @@ Status: design and tasks are written; the harness that calls the model is not, a
   expectation) and `task.h` (the one function to implement).
 - **Hidden:** `hidden/test.cu` (correctness on sizes and seeds the agent never sees, plus timing) and
   `hidden/reference.cu` (my solution, used to validate the test and for the reference timing).
-- **Visible in condition C only:** `public_test.cu`, run through `run_public_test`.
+- **Visible in condition C only:** the *result* of the public test, `hidden/test.cu` built with
+  `-DEVAL_PUBLIC` (one small case), returned by `run_public_test`. The source is never shown.
 - **Task metadata:** `meta.json` (split, library, which checks apply, e.g. "must use tensor cores").
 
 None of the tasks is a copy of an official example or of this repo's kernels. Each changes the operation,

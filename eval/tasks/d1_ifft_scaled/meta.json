@@ -1,0 +1,2 @@
+{"id": "d1_ifft_scaled", "split": "dev", "library": "cufftdx", "requires_mma": false,
+ "traps": ["inverse direction", "1/N scaling fused in the store", "batch not a multiple of FFTs per block"]}

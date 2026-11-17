@@ -1,0 +1,2 @@
+{"id": "d4_gemm_relu_hmma", "split": "dev", "library": "cublasdx", "requires_mma": true,
+ "traps": ["default layouts compile to FMA on sm_75 (no HMMA)", "epilogue on register fragments", "fp16 in, fp32 out"]}

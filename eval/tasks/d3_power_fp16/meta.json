@@ -1,0 +1,2 @@
+{"id": "d3_power_fp16", "split": "dev", "library": "cufftdx", "requires_mma": false,
+ "traps": ["fp16 implicit batching: two FFTs per complex<__half2> in RRII layout", "batchid covers only half the FFTs", "odd batch leaves half a pair empty"]}

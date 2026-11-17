@@ -1,0 +1,2 @@
+{"id": "d2_gemm_batched", "split": "dev", "library": "cublasdx", "requires_mma": false,
+ "traps": ["three different arrangements", "gmem layouts vs smem layouts", "one GEMM per block over a batch"]}
