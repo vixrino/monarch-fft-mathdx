@@ -25,8 +25,6 @@ find_package(mathdx REQUIRED COMPONENTS cufftdx cublasdx CONFIG
              PATHS ${MATHDX_ROOT} NO_DEFAULT_PATH)
 message(STATUS "MathDx ${mathdx_VERSION} at ${MATHDX_ROOT}, sm_${CUDA_ARCH}")
 
-add_executable(dx_smoke cuda/common/dx_smoke.cu)
-target_include_directories(dx_smoke PRIVATE cuda/common)
 # header-only GEMM path; 25.12 has no _no_lto target, see docs/decisions.md
 if(TARGET mathdx::cublasdx_no_lto)
   set(cublasdx_target mathdx::cublasdx_no_lto)
@@ -34,6 +32,8 @@ else()
   set(cublasdx_target mathdx::cublasdx)
 endif()
 
+add_executable(dx_smoke cuda/common/dx_smoke.cu)
+target_include_directories(dx_smoke PRIVATE cuda/common)
 target_link_libraries(dx_smoke PRIVATE mathdx::cufftdx ${cublasdx_target})
 
 find_package(CUDAToolkit REQUIRED)
@@ -61,5 +61,15 @@ target_compile_definitions(cufftdx_block_fft PRIVATE
   DXB_MATHDX_VERSION="${mathdx_VERSION}")
 target_link_libraries(cufftdx_block_fft PRIVATE mathdx::cufftdx CUDA::cufft CUDA::nvml)
 
+add_executable(monarch_fft cuda/monarch/monarch_fft.cu)
+target_include_directories(monarch_fft PRIVATE cuda/common)
+target_compile_definitions(monarch_fft PRIVATE
+  DXB_SM=${CUDA_ARCH}0
+  DXB_GIT_COMMIT="${git_commit}"
+  DXB_GIT_DIRTY=${git_dirty}
+  DXB_MATHDX_VERSION="${mathdx_VERSION}")
+target_link_libraries(monarch_fft PRIVATE ${cublasdx_target} CUDA::cufft CUDA::nvml)
+
 enable_testing()
 add_test(NAME cufftdx_accuracy COMMAND cufftdx_block_fft --check)
+add_test(NAME monarch_accuracy COMMAND monarch_fft --check)
