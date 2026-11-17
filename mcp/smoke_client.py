@@ -73,7 +73,8 @@ async def clean():
         s = await call(c, "sass_check", binary="monarch_fft", kernel_filter="__half")
         show("sass_check fp16 monarch", s, ["ok", "kernels_with_mma"])
         b = await call(c, "benchmark", binary="monarch_fft", key="monarch:fp16:256:16x16")
-        rec = [(r["batch"], r["gbps_eff"], r["rel_l2_median"]) for r in b.get("records", [])]
+        rec = [(r["batch"], r["gbps_eff"], r["rel_l2_median"]) if r.get("status") == "ok" else r.get("status")
+               for r in b.get("records", [])]
         show("benchmark monarch:fp16:256:16x16 (batch, GB/s, rel L2)", {**b, "records": rec}, ["ok", "records", "note"])
         show("run_tests before building cufftdx", await call(c, "run_tests", binary="cufftdx_block_fft"), ["ok", "rejected"])
         show("build cufftdx_block_fft", await call(c, "build", target="cufftdx_block_fft"), ["ok", "seconds", "errors"])

@@ -185,6 +185,7 @@ bool run(const args& a, FILE* f, const std::string& prov) {
   char key[64];
   std::snprintf(key, sizeof key, "monarch:%s:%u:%ux%u", fp16 ? "fp16" : "fp32", n, N1, N2);
   bench b{"monarch_block_fft", c, n, fpb, fp16 ? 1e-2 : 1e-5, label, key};
+  if (a.only && std::strcmp(a.only, key) != 0) return true;  // --only also silences skipped configs
   if (!fits || occ == 0) {
     skip(f, b, prov, "shared memory");
     return true;

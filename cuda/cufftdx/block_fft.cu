@@ -106,6 +106,7 @@ bool run(const args& a, FILE* f, const std::string& prov) {
   char key[64];
   std::snprintf(key, sizeof key, "cufftdx:%s:%u", fp16 ? "fp16" : "fp32", N);
   bench b{"cufftdx_block_fft", c, N, fpb, fp16 ? 1e-2 : 1e-5, label, key};
+  if (a.only && std::strcmp(a.only, key) != 0) return true;  // --only also silences skipped configs
   if (!fits) {
     skip(f, b, prov, "shared memory");
     return true;
