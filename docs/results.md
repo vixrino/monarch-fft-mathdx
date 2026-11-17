@@ -184,6 +184,52 @@ The GEMM 1 of the 8×32 configuration (N = 8 columns) is expected to stay on
 FMA: on sm_75 the suggested path only selects the 16×8×8 HMMA atom when the
 GEMM divides a 32×16×8 warp tile (`docs/decisions.md`).
 
+## Nsight Compute profile (fp16)
+
+Files: `results/tesla_t4/2026-11-17_ncu_*.csv` (raw pages, commit ea51822).
+They were produced by `scripts/profile.sh` with `ncu --set full`: one launch at batch 16384 per configuration.
+The table is built from those CSVs.
+
+| metric | cuFFTDx N=256 | Monarch 16×16 | cuFFTDx N=4096 | Monarch 64×64 |
+|---|---:|---:|---:|---:|
+| SM clock under ncu (MHz) | 581 | 585 | 579 | 585 |
+| SM cycles elapsed (avg) | 95k | 160k | 1319k | 6517k |
+| grid (blocks) | 2,048 | 120 | 8,192 | 40 |
+| warps active per SM (of 32) | 25.1 | 11.2 | 23.6 | 4.0 |
+| occupancy limit: shared mem / registers (blocks) | 16 / 14 | 3 / 4 | 4 / 3 | 1 / 4 |
+| issue active (% of peak) | 21 | 44 | 33 | 19 |
+| instructions executed | 2.9M | 10.8M | 70.1M | 199.4M |
+| tensor pipe active (%) | 0.4 | 18.6 | 0.9 | 26.4 |
+| fp16 pipe (% of peak) | 24.4 | 4.2 | 42.3 | 1.6 |
+| ALU pipe (% of peak) | 9.1 | 46.9 | 11.1 | 16.7 |
+| memory throughput (% of peak) | 83 | 45 | 85 | 38 |
+| DRAM read + write (MB) | 42 | 39 | 616 | 632 |
+| smem load wavefronts / bank conflicts | 0.28M / 0.15M | 0.75M / 0.06M | 4.42M / 0.23M | 44.61M / 25.73M |
+| smem store wavefronts / bank conflicts | 0.54M / 0.41M | 1.33M / 0.94M | 13.00M / 8.79M | 34.19M / 27.90M |
+
+Caveat: ncu locks the SM clock to base (about 585 MHz) during profiling,
+while the timed runs use boost clocks. This slows the compute-bound Monarch
+kernels more than the memory-bound cuFFTDx ones: under ncu, Monarch 16×16
+takes more cycles than cuFFTDx N=256, although it is 1.2× faster in the timed
+sweep. So I read only ratios and utilizations from this table, not durations
+across kernels.
+
+Measured:
+- **Monarch 64×64 has one 128-thread block per SM.** That is 4 warps active out
+  of 32, i.e. one warp per scheduler. The limit is shared memory: 48 KB per
+  block, one block fits. Issue slots are 19 % active.
+- **Shared-memory traffic in Monarch 64×64:**
+  - 44.6M load wavefronts and 34.2M store wavefronts, against 4.4M and 13.0M
+    for cuFFTDx N=4096.
+  - Bank conflicts: 25.7M on loads and 27.9M on stores.
+- **Instructions executed:** 199M for Monarch 64×64 vs 70M for cuFFTDx (2.8×).
+- **DRAM traffic is the same** for both at N=4096 (616 vs 632 MB). cuFFTDx runs
+  at 85 % of peak memory throughput, Monarch 64×64 at 38 %.
+- **The tensor pipe is active 26 % (64×64) and 19 % (16×16)** for Monarch, and
+  under 1 % for cuFFTDx. This confirms the SASS evidence with a runtime counter.
+- **Monarch 16×16** runs 11 warps per SM (limit: 3 blocks by shared memory).
+  Its ALU pipe is the busiest at 47 % of peak.
+
 ## Findings
 
 Measured (sweep file above):
@@ -208,7 +254,7 @@ Measured (sweep file above):
    - N = 512: 16×32 is 5 % faster than 32×16.
    - N = 2048: the two orders are within the IQR.
 
-Interpretation (not measured; nothing has been profiled yet):
+Interpretation:
 
 - *(interpretation)* The flat fp16 error suggests that rounding the input and
   the one intermediate (after the twiddle) to fp16 dominates. In the Monarch
@@ -216,15 +262,19 @@ Interpretation (not measured; nothing has been profiled yet):
   butterflies rounds after each of its log2 N stages, which fits an error that
   grows with N. The Phase 1 CPU emulation of the same rounding points gave
   2.6–3.4e-4, close to the GPU numbers.
-- *(interpretation)* The Monarch slowdown from N = 1024 on is consistent with
-  three things that grow with N:
-  - the dense DFT work, N·(n1 + n2) complex multiply-adds per FFT against
-    O(N log N) for a radix FFT (524k vs about 25k butterflies' worth at 4096);
-  - occupancy dropping to 1–2 blocks of 128 threads per SM;
-  - more shared memory per FFT.
+- *(interpretation, supported by the ncu table)* cuFFTDx is memory-bound at
+  N = 4096 (85 % of peak memory throughput). Monarch 64×64 is not: it moves
+  the same DRAM bytes at 38 %. At N = 4096 its time goes into the block itself,
+  for three reasons:
+  - with one warp per scheduler, there is nothing to hide shared-memory and
+    tensor-core latency (19 % issue active);
+  - it executes 2.8× the instructions, because the dense DFT costs
+    N·(n1 + n2) complex multiply-adds per FFT against O(N log N);
+  - its shared-memory traffic is about 4.5× cuFFTDx's, more than half of it
+    bank-conflict replays.
 
-  Which of these dominates is untested. It needs Nsight Compute (tensor-pipe
-  utilization, shared-memory bank conflicts, stall reasons).
+  I have not separated these three effects. The shared-memory limit is the
+  first thing to change (see next step in docs/decisions.md).
 - *(interpretation)* fp32 Monarch is slow because on sm_75 its GEMMs run on
   FFMA: 4160–16448 static FFMA vs 64–228 in cuFFTDx. Static counts are not
   executed counts, so this is an indication, not a measurement of work.
@@ -240,11 +290,9 @@ Interpretation (not measured; nothing has been profiled yet):
   tensor cores, and cuBLASDx's sm_75 tuning database selects FMA for these
   shapes unless the suggested layouts are used. Nothing here says how Ampere or
   Hopper behave.
-- **No profiler counters yet.**
-  - Nsight Compute counters were readable on Colab in env_check, but I have not
-    profiled yet.
-  - Tensor-core use is shown by static SASS counts, not by tensor-pipe utilization.
-  - Every statement about why something is slow is untested.
+- **Profiling is partial.** Four fp16 kernels were profiled, at the base
+  clock that ncu imposes. Nothing was profiled in fp32. The profile shows where
+  time goes, but no fix has been tested yet.
 - **Shared Colab instances.** Clocks are not locked, and runs in different
   sessions differ by a few percent (compare the earlier per-binary runs in
   `results/tesla_t4/`). Only numbers from the same sweep file are compared.

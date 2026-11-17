@@ -529,3 +529,32 @@ utilization including tensor, shared-memory bank conflicts, stall reasons),
 so I don't have to guess which names the Turing ncu exports.
 Configurations profiled: Monarch fp16 64×64 (0.39× cuFFTDx) and 16×16
 (1.19×), plus cuFFTDx fp16 at N = 4096 and 256 as references.
+
+### Nsight Compute run (Colab T4, commit ea51822)
+Raw data: results/tesla_t4/2026-11-17_ncu_{cufftdx_fp16_256,cufftdx_fp16_4096,
+monarch_fp16_256_16x16,monarch_fp16_4096_64x64}.csv, plus a second sweep
+results/tesla_t4/2026-11-17_sweep_2.jsonl (same kernels; every throughput
+within 4 % of the first sweep, ratios unchanged to two digits). The summary
+table is in docs/results.md.
+
+What the profile says about Monarch fp16 64×64:
+- 1 block of 128 threads per SM: `launch__occupancy_limit_shared_mem` = 1
+  for 48 KB per block. Registers would allow 4.
+- 4.0 warps active per SM, 19 % issue active.
+- Shared-memory wavefronts and bank conflicts dwarf cuFFTDx's (loads 44.6M
+  with 25.7M conflicts; stores 34.2M with 27.9M).
+- The tensor pipe is active 26 %. Memory throughput is 38 % vs 85 % for
+  cuFFTDx, with the same DRAM bytes.
+
+ncu locks the SM clock at base (~585 MHz), so cycle counts across kernels with
+different compute/memory balance do not reproduce the timed ranking. I use the
+profile for utilizations and ratios only.
+
+Next step this points to (not done): since GEMM 1 was transposed, g1 and g2
+are the same cuBLASDx type when n1 == n2 (both `gemm<T, fpb·n, n, n>`). So the
+suggested B layouts are identical too, and one F table can serve both GEMMs in
+fp16, as it already does in fp32. For 64×64 that cuts shared memory from
+48 KB to 32 KB, which allows 2 blocks per SM (64 KB per SM on T4, registers
+allow 4). After that, look at the bank conflicts in the epilogue stores
+(writes through the swizzled A2 layout in fragment order) and in the
+transposed output write `buf[f*n + j1 + n1*j2]` (stride n1).

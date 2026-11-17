@@ -27,9 +27,14 @@ The full tables and method are in [docs/results.md](docs/results.md).
 - **Tensor cores, shown in SASS:** every fp16 Monarch kernel contains HMMA
   instructions. The fp32 kernels and every cuFFTDx kernel contain none (the
   table is in docs/results.md).
-- **Why Monarch slows down beyond N = 512:** not profiled yet. The candidates
-  are dense O(N·(n1+n2)) work, occupancy and shared memory; I have not measured
-  which one it is.
+- **Why Monarch slows down at large N (Nsight Compute, fp16 64×64):**
+  - shared memory (48 KB per block) allows one 128-thread block per SM, so
+    4 warps of 32 are active;
+  - it executes 2.8× cuFFTDx's instructions;
+  - shared-memory traffic is about 4.5× cuFFTDx's, with many bank conflicts.
+
+  cuFFTDx is at 85 % of peak memory throughput and Monarch at 38 %, for the
+  same DRAM bytes.
 
 One result I did not expect: with cuBLASDx's default shared-memory layouts the
 fp16 GEMMs compile to scalar HMUL2/FADD on sm_75, not HMMA. Only the
@@ -74,8 +79,8 @@ The Python reference and its tests run without a GPU:
 ## Limitations
 
 - **One GPU:** T4 only, so nothing here covers Ampere or Hopper tensor cores.
-- **No profiler data yet:** I have no Nsight Compute numbers, so every "why" in
-  the results is labeled as interpretation.
+- **Partial profiling:** four fp16 kernels were profiled, and no optimization has
+  been tested against those profiles yet.
 - **Unpinned clocks:** Colab sessions vary by up to about 13 %. Figures use one
   session only.
 - **Limited sizes:** Monarch covers N ≤ 4096 with power-of-two two-factor splits.
