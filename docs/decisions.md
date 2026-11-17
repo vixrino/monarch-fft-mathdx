@@ -698,3 +698,48 @@ raises ImportError in 3.x. `chat.complete` takes `tools`, `tool_choice`, `parall
 A side benefit: the tasks and reference solutions were written with Claude, so not evaluating Claude
 avoids grading a model on problems its own family wrote. The results describe Mistral Medium only, and
 the write-up must not generalize them to "LLM agents".
+
+### Model under test, revised: Qwen3 8B, local, through ollama (replaces Mistral Medium)
+Lucas lost access to the Mistral API. I looked for a free API that can run the eval (45 agent runs of up to
+16 turns, contexts up to ~24k tokens), from third-party summaries dated 2026, not from the providers' own pages:
+- Groq free: about 8k tokens per minute per model, so one condition-B turn with docs in context can exceed it.
+- Cerebras: the free tier became a $5 trial behind a card.
+- Gemini Flash free: about 100 requests per day, so roughly a week of runs.
+
+Chosen instead: `qwen3:8b` served by ollama on the same Colab T4. It is free, has no quota, and the model is
+pinned by its digest, which every record stores. `eval/probe_api.py` checked one tool-call round trip on the
+T4 on 2026-11-18: correct `compile` call with the right argument, ~40 tok/s generation, 131 s for the first
+call (model load). The cost: an 8B model is much weaker than Mistral Medium, so all three conditions may fail
+most tasks. That would be a result about this model, reported as such. The tasks and references were still
+written with Claude, which is still not the model under test.
+
+Settings, identical in A/B/C: temperature 0, seed 0, `think=False` (Qwen3's thinking mode would multiply
+output tokens at 40 tok/s), num_ctx 32768, 4096 output tokens per turn, 16 turns, stop when a prompt reaches
+24k tokens, tool results clipped to 6000 characters.
+
+## Phase 6: harness
+
+### Tools
+- **Fewer, simpler tools.** `write_solution(code)` replaces write_file/read_file: there is one file, and an 8B
+  model handles fewer tools better (assumption, not measured). The spec and task.h go in the first message.
+- **B corpus = the installed MathDx package:** `doc/` (only cuBLASDx ships docs: HTML stripped to text,
+  llms.txt, the markdown agent guide), `include/` without `cufftdx/database` (100 MB of generated kernel
+  tables, no prose) and `example/`.
+  - cuFFTDx has no prose docs in the package, so for cuFFTDx tasks B means headers plus examples. I did not
+    add the online cuFFTDx HTML, to keep the corpus "what is on disk after installing MathDx".
+  - The official examples count as documentation: NVIDIA ships them as such, and an agent with a shell would
+    read them.
+- **No unofficial guide anywhere.** `agent_guides/cufftdx_agent_guide.md` is in no condition, so C − B
+  measures the tool loop, not my guide. It could become a fourth condition later.
+- **Local doc pointers.** C's `diagnose` returns local `read_doc` paths. It reuses mcp/doc_links.py and keeps
+  only the cuBLASDx entries, since the cuFFTDx ones point at online pages that are not in the corpus.
+
+### Grading
+- **Reference timing in the same session.** The harness re-validates each task's reference before the agent
+  runs, and `perf_vs_ref` = reference time / agent time, so above 1 means faster than mine.
+- **api_misuse** = number of distinct compiler error messages that mention cufftdx/cublasdx/commondx (in the
+  message, its context or the file path), over every build in the run, plus 1 when a tensor-core task
+  compiles without HMMA.
+- **Tokens:** as ollama reports them (prompt_eval_count, eval_count), summed over turns. With ollama's
+  prompt cache these may count only re-evaluated tokens; the probe's second call reported 220 prompt tokens
+  for a ~220-token context, so it looked like full counts there. Not checked on long runs.

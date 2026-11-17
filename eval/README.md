@@ -1,17 +1,22 @@
 # Agent evaluation: does documentation plus an MCP loop help an agent write MathDx code?
 
-Second research question of this repo (CLAUDE.md). It compares one model, Mistral Medium
-(`mistral-medium-latest`, through the `mistralai` Python SDK), under three conditions, with the same prompt,
-the same token budget and the same iteration budget:
+Second research question of this repo (CLAUDE.md). It compares one model, Qwen3 8B (`qwen3:8b`, served by
+ollama on the same T4; docs/decisions.md says why it is not an API model), under three conditions, with the
+same prompt, the same token budget and the same iteration budget:
 
 | condition | tools the agent gets |
 |---|---|
-| A, agent alone | `write_file`, `read_file`, `compile` (nvcc errors only) |
-| B, + official docs | A + `search_docs` / `read_doc` over NVIDIA's docs and the installed MathDx headers |
-| C, + docs + MCP | B + `run_public_test`, `sass_check`, `diagnose` (the tools of `mcp/server.py`, pointed at the task) |
+| A, agent alone | `write_solution`, `compile` (nvcc errors only), `submit` |
+| B, + official docs | A + `search_docs` / `read_doc` over the installed MathDx package: docs, headers, examples |
+| C, + docs + MCP | B + `run_public_test`, `sass_check`, `diagnose` (the checks of `mcp/server.py`, pointed at the task) |
 
-Status: design and the 5 dev tasks are written (`eval/validate.py` checks them with the reference solutions).
-The held-out tasks and the harness that calls the model are not written yet. Nothing has been run.
+Status: the 5 dev tasks pass with the reference solutions on the T4
+(`results/tesla_t4/2026-11-17_eval_reference.jsonl`). `eval/harness.py` is written and unit-tested off GPU,
+not yet run with the model. The held-out tasks are not written yet.
+
+Run (Colab T4, after `ollama serve` and `ollama pull qwen3:8b`):
+`python3 eval/harness.py --tasks d1_ifft_scaled --conditions A B C`. One record per run goes to
+`results/<gpu>/<date>_eval_runs[_k].jsonl` and the full conversation to `..._eval_transcripts[_k].jsonl`.
 
 ## Why these three conditions
 

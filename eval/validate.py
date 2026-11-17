@@ -18,11 +18,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EVAL = os.path.join(ROOT, "eval")
 
 
-def nvcc_cmd(task_dir, sources, out, extra=()):
+def nvcc_cmd(task_dir, sources, out, extra=(), link=True):
     mx = os.environ["MATHDX_ROOT"]
     return (["nvcc", "-std=c++17", "--expt-relaxed-constexpr", "-DCUBLASDX_NO_FATBIN_AVAILABLE", "-O3", "-DNDEBUG",
              "-arch=sm_75", f"-I{mx}/include", f"-I{mx}/external/cutlass/include", f"-I{EVAL}/common",
-             f"-I{task_dir}"] + list(extra) + sources + ["-lcufft", "-o", out])
+             f"-I{task_dir}"] + list(extra) + sources + (["-lcufft"] if link else ["-c"]) + ["-o", out])
 
 
 def sh(argv, timeout):
