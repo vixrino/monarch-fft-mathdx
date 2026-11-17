@@ -663,3 +663,28 @@ since it is a functional test, not a measurement):
 The benchmark tool's 163.8 GB/s for fp16 16×16 differs from the sweeps (195–197 GB/s). It is one
 configuration in a fresh process right after a build in the same session, and I have not looked into it;
 the tool returns the record, it is not a measurement campaign.
+
+## Phase 6: agent evaluation (design)
+
+### Conditions
+- **A:** write/read files plus `compile`.
+- **B:** A plus official docs and the installed headers.
+- **C:** B plus the MCP tools.
+- **Model and budgets:** the same for all three, set at run time.
+
+Alternative considered: give A and B a public-test runner too. Rejected because most of the MCP server's
+value is executing things (accuracy with failing indices, SASS); with a runner in every arm, C − B would
+measure only the doc links and the SASS check.
+
+### Build command for tasks
+No CMake per task. One nvcc line derived from the installed cuBLASDx config (`cublasdx-targets.cmake`,
+`cublasdx-config.cmake`, target `cublasdx_no_lto`):
+- flags: `-std=c++17 --expt-relaxed-constexpr -DCUBLASDX_NO_FATBIN_AVAILABLE -O3 -DNDEBUG -arch=sm_75`;
+- includes: `$MATHDX_ROOT/include` and `$MATHDX_ROOT/external/cutlass/include`;
+- link: `-lcufft` (hidden tests only, for the FP64 reference).
+
+### Tasks
+15 tasks: 5 dev, 10 held-out (table in eval/README.md). None copies an official example or this repo's
+kernels. Some deliberately sit next to official examples (inverse FFT, fp16 I/O), because there a
+remembered example is most likely to be confidently wrong. Two (d4, h06) require tensor cores and check
+the SASS: the trap from docs/agent_log.md.

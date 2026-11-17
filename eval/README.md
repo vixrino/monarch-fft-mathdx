@@ -1,0 +1,76 @@
+# Agent evaluation: does documentation plus an MCP loop help an agent write MathDx code?
+
+Second research question of this repo (CLAUDE.md). It compares one model under three conditions, with the
+same prompt, the same token budget and the same iteration budget:
+
+| condition | tools the agent gets |
+|---|---|
+| A, agent alone | `write_file`, `read_file`, `compile` (nvcc errors only) |
+| B, + official docs | A + `search_docs` / `read_doc` over NVIDIA's docs and the installed MathDx headers |
+| C, + docs + MCP | B + `run_public_test`, `sass_check`, `diagnose` (the tools of `mcp/server.py`, pointed at the task) |
+
+Status: design and tasks are written; the harness that calls the model is not, and nothing has been run.
+
+## Why these three conditions
+
+- **All three can compile.** Compiler errors are what any agent with a shell gets. The eval measures what
+  documentation adds (B − A), and then what a validate/profile loop adds on top (C − B).
+- **Only C can execute anything.** A and B never see a numerical result or the SASS. Giving them a test
+  runner would make "agent alone" an agent with a test loop, which is most of what the MCP server provides.
+  This choice is debatable; docs/decisions.md records it and the alternative.
+- **Headers count as documentation.** B and C can read `include/` of the installed MathDx; A cannot. Reading
+  the headers is what this repo's own rules require of an agent, so it belongs to the "docs" arm.
+
+## Tasks
+
+`tasks/<id>/` holds:
+- **Visible to the agent:** `spec.md` (what to compute, layouts, sizes, tolerance, performance
+  expectation) and `task.h` (the one function to implement).
+- **Hidden:** `hidden/test.cu` (correctness on sizes and seeds the agent never sees, plus timing) and
+  `hidden/reference.cu` (my solution, used to validate the test and for the reference timing).
+- **Visible in condition C only:** `public_test.cu`, run through `run_public_test`.
+- **Task metadata:** `meta.json` (split, library, which checks apply, e.g. "must use tensor cores").
+
+None of the tasks is a copy of an official example or of this repo's kernels. Each changes the operation,
+the data layout or the fusion so that a remembered example does not compile into a correct answer.
+Several are adjacent to official examples on purpose, since that is where an agent's memory is most
+likely to be confidently wrong.
+
+| id | split | library | what |
+|---|---|---|---|
+| d1_ifft_scaled | dev | cuFFTDx | batched inverse C2C fp32, N = 1024, output scaled by 1/N |
+| d2_gemm_batched | dev | cuBLASDx | batched real fp32 GEMM 32×32×32, A row-major, B and C column-major |
+| d3_power_fp16 | dev | cuFFTDx | fp16 forward FFT N = 512, output fp32 power spectrum `|X[k]|²` |
+| d4_gemm_relu_hmma | dev | cuBLASDx | fp16→fp32 64×64×64 GEMM + per-column bias + ReLU, must run on tensor cores |
+| d5_fft_shift | dev | cuFFTDx | fp32 forward FFT N = 256 with output in fftshift order (zero frequency centered) |
+| h01_fft_columns | held-out | cuFFTDx | FFT along the columns of a row-major 128 × 128 complex matrix, in place |
+| h02_circ_xcorr | held-out | cuFFTDx | circular cross-correlation of signal pairs, N = 512, in one kernel |
+| h03_thread_fft16 | held-out | cuFFTDx | thread-level FFT, N = 16, one FFT per thread, 2^20 FFTs |
+| h04_ifft_fp16_natural | held-out | cuFFTDx | fp16 inverse FFT N = 1024 with natural-layout `__half2` I/O |
+| h05_spectral_deriv | held-out | cuFFTDx | spectral derivative of a periodic signal: FFT, multiply by i·k, inverse, real part |
+| h06_gemm_complex_hmma | held-out | cuBLASDx | complex fp16→fp32 GEMM 32×64×32, must run on tensor cores |
+| h07_gemm_alpha_beta | held-out | cuBLASDx | fp32 C = α·Aᵀ·B + β·C, 64 × 32 × 48, in place on C |
+| h08_gemm_chain | held-out | cuBLASDx | D = (A·B)·C for 32 × 32 matrices in one block, fp32 |
+| h09_fft_then_gemm | held-out | both | per row: FFT (N = 64), keep 16 lowest modes, multiply by a complex 16 × 16 weight matrix |
+| h10_gemm_then_fft | held-out | both | C = A·B (64 × 64 × 64, fp32 complex), then FFT of every row of C, one kernel |
+
+The dev tasks are for building and debugging the harness and may be looked at freely. The held-out tasks
+are run once per condition at the end, with no prompt or harness change after the first held-out run.
+
+## Metrics (per task, per condition)
+
+- **compiles:** the final solution builds.
+- **correct:** the hidden test passes, i.e. rel L2 against an FP64 reference under the spec's tolerance on
+  every hidden size and seed.
+- **api_misuse:** count of compiler errors that name a MathDx symbol, plus the hidden-test check for the
+  traps in meta.json (e.g. a "tensor cores required" task whose kernel has no MMA).
+- **iterations:** model turns until the agent submits or the budget ends.
+- **wall time** and **tokens:** input, output, cached.
+- **perf vs reference:** median time of the hidden test's timing launch, divided by the reference
+  solution's time in the same session.
+
+## Reporting
+
+Per-task tables only, plus counts ("C solved 7 of 10, B 5 of 10"). With 10 held-out tasks and one run
+per cell, I make no significance claims. A difference of one or two tasks is within what a different
+seed or prompt wording could flip, and the write-up says so.
