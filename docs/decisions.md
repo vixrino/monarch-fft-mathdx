@@ -380,3 +380,29 @@ three variants that differ only in what selects the instruction:
 Each variant is checked for an exact result on small-integer inputs, and
 `sass_check.sh` on the binary shows which one emits HMMA. The Monarch kernel
 will then use the first variant that does.
+
+### mma_probe result and the fix (Colab T4, commit d4e0e83)
+`./build/mma_probe` + `sass_check.sh build/mma_probe probe`, one 64×64×64
+complex fp16→fp32 GEMM, 128 threads, all three exact on small-integer inputs:
+
+| variant                                   | static MMA | total SASS |
+|-------------------------------------------|-----------:|-----------:|
+| 0 plain `get_layout_smem_*` + `get_accumulator` |      0 |      17216 |
+| 1 `suggest_layout_smem_*` + `suggest_accumulator` | 256 |        872 |
+| 2 `experimental::Tile<SM75_..C32C16C16C32_TN, 2, 2>` | 256 |      840 |
+
+So on sm_75 the suggested layouts/accumulator route the GEMM to HMMA while
+the plain ones take the database's `universal_fma`. I use variant 1: it is
+the documented API, variant 2 depends on a `detail` type for 8 % fewer
+static instructions. Counts are static; a K loop that is not unrolled
+executes its HMMAs more than once, so 256 is not the executed count.
+
+Consequences in monarch_fft.cu (fp16 only; fp32 keeps plain layouts since it
+has no tensor-core path on sm_75 and the plain layouts let n1 == n2 share F):
+- Every write into B1, A2 and the F tables goes through tensor coordinates
+  `t(row, col)` instead of a raw index, because the suggested layouts are
+  swizzled. The output staging in buf stays raw: it is my layout, written
+  after the last GEMM read.
+- F_n1 (A role of GEMM 1) and F_n2 (B role of GEMM 2) can no longer share a
+  buffer even when n1 == n2: their suggested layouts differ. fp16 64×64 smem
+  goes from 32 KB to 48 KB.
