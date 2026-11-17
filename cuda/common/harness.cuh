@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <ctime>
 #include <string>
 #include <vector>
@@ -202,4 +203,104 @@ inline std::string provenance(int argc, char** argv) {
                 cufft_ver, jstr(DXB_MATHDX_VERSION).c_str(), jstr(DXB_GIT_COMMIT).c_str(),
                 DXB_GIT_DIRTY ? "true" : "false", jstr(ts).c_str(), jstr(cmd).c_str());
   return buf;
+}
+
+inline size_t round_up(size_t a, size_t b) { return (a + b - 1) / b * b; }
+
+constexpr int acc_seeds = 5;
+constexpr size_t acc_ffts = 64;
+constexpr size_t big_batch = 1 << 14;
+
+struct bench {
+  const char* experiment;
+  std::string cfg;  // JSON members describing the kernel configuration
+  unsigned n;
+  size_t group;     // FFTs handled together; batches are multiples of it
+  double tol;       // sanity bound on the median rel L2, not an expected value
+  std::string label;
+};
+
+// Accuracy against the FP64 cuFFT reference, then timing at batch = group (latency) and ~2^14 (throughput).
+// launch(x, y) runs the kernel on x.n / n FFTs and returns the grid size it used.
+template <class IO, class Launch>
+bool measure(FILE* f, const bench& b, bool check, const std::string& prov, Launch launch) {
+  const size_t ab = round_up(acc_ffts, b.group);
+  dbuf<double2> x64(ab * b.n), r64(ab * b.n);
+  dbuf<IO> x(ab * b.n), y(ab * b.n);
+  std::vector<double> rel(acc_seeds), mx(acc_seeds);
+  for (int s = 0; s < acc_seeds; ++s) {
+    fill_random(x64, s);
+    fill_random(x, s);
+    fft_ref_fp64(x64, r64, int(b.n));
+    launch(x, y);
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+    err e = compare(to_host_fp64(y), to_host_fp64(r64));
+    rel[s] = e.rel_l2;
+    mx[s] = e.max_abs;
+  }
+  const double rel_med = quantile(rel, 0.5), mx_med = quantile(mx, 0.5);
+  const bool pass = rel_med < b.tol;
+  std::fprintf(stderr, "%s  rel_l2=%.3e max_abs=%.3e  %s\n", b.label.c_str(), rel_med, mx_med, pass ? "ok" : "FAIL");
+  if (check) return pass;
+
+  char acc[256];
+  std::snprintf(acc, sizeof acc,
+                "\"rel_l2_median\":%.6e,\"max_abs_median\":%.6e,\"acc_seeds\":%d,\"acc_batch\":%zu,"
+                "\"acc_tol\":%.1e,\"acc_pass\":%s",
+                rel_med, mx_med, acc_seeds, ab, b.tol, pass ? "true" : "false");
+  for (size_t batch : {b.group, round_up(big_batch, b.group)}) {
+    dbuf<IO> xb(batch * b.n), yb(batch * b.n);
+    fill_random(xb, 0);
+    size_t grid = 0;
+    timing t = time_ms([&] { grid = launch(xb, yb); });
+    const double sec = t.median * 1e-3;
+    const double bytes = 2.0 * batch * b.n * sizeof(IO);
+    std::fprintf(f,
+                 "{\"experiment\":\"%s\",\"status\":\"ok\",%s,\"batch\":%zu,\"grid\":%zu,\"time_ms_median\":%.6f,"
+                 "\"time_ms_p25\":%.6f,\"time_ms_p75\":%.6f,\"warmup\":%d,\"iters\":%d,\"ffts_per_s\":%.6e,"
+                 "\"gbps_eff\":%.3f,%s,%s}\n",
+                 b.experiment, b.cfg.c_str(), batch, grid, t.median, t.p25, t.p75, t.warmup, t.iters, batch / sec,
+                 bytes / sec * 1e-9, acc, prov.c_str());
+    std::fprintf(stderr, "    batch=%6zu  median=%.4f ms  iqr=[%.4f, %.4f]  %.1f GB/s\n", batch, t.median, t.p25,
+                 t.p75, bytes / sec * 1e-9);
+  }
+  return pass;
+}
+
+inline void skip(FILE* f, const bench& b, const std::string& prov, const char* why) {
+  std::fprintf(stderr, "%s  skipped: %s\n", b.label.c_str(), why);
+  std::fprintf(f, "{\"experiment\":\"%s\",\"status\":\"skipped\",\"reason\":%s,%s,%s}\n", b.experiment,
+               jstr(why).c_str(), b.cfg.c_str(), prov.c_str());
+}
+
+inline int smem_optin_max() {
+  int dev, v;
+  CUDA_CHECK(cudaGetDevice(&dev));
+  CUDA_CHECK(cudaDeviceGetAttribute(&v, cudaDevAttrMaxSharedMemoryPerBlockOptin, dev));
+  return v;
+}
+
+inline int sm_count() {
+  int dev, v;
+  CUDA_CHECK(cudaGetDevice(&dev));
+  CUDA_CHECK(cudaDeviceGetAttribute(&v, cudaDevAttrMultiProcessorCount, dev));
+  return v;
+}
+
+struct args {
+  bool check = false;
+  const char* out = nullptr;
+};
+
+inline bool parse_args(int argc, char** argv, args& a) {
+  for (int i = 1; i < argc; ++i) {
+    if (!std::strcmp(argv[i], "--check")) a.check = true;
+    else if (!std::strcmp(argv[i], "--out") && i + 1 < argc) a.out = argv[++i];
+    else {
+      std::fprintf(stderr, "usage: %s [--check] [--out results.jsonl]\n", argv[0]);
+      return false;
+    }
+  }
+  return true;
 }

@@ -5,7 +5,6 @@
 // 03_block_fft_performance/block_fft_performance.hpp, common/block_io.hpp, common/fp16_common.hpp),
 // Copyright NVIDIA Corporation, Apache-2.0. Differences: out-of-place, natural (RIRI) global
 // layout for fp16, and my own harness for timing and accuracy.
-#include <cstring>
 #include <type_traits>
 
 #include <cufftdx.hpp>
@@ -76,125 +75,63 @@ __launch_bounds__(FFT::max_threads_per_block) __global__ void block_fft(const IO
   }
 }
 
-struct opts {
-  bool check = false;
-  const char* out = nullptr;
-};
-
-constexpr int acc_seeds = 5;
-constexpr size_t acc_ffts = 64;
-constexpr size_t big_batch = 1 << 14;
-
-size_t round_up(size_t a, size_t b) { return (a + b - 1) / b * b; }
-
 template <class T, unsigned N>
-bool run(const opts& o, FILE* f, const std::string& prov) {
+bool run(const args& a, FILE* f, const std::string& prov) {
   using FFT = typename cfg<T, N>::fft;
   using IO = typename cfg<T, N>::io;
   constexpr bool fp16 = std::is_same_v<T, __half>;
   constexpr unsigned fpb = FFT::ffts_per_block;
   static_assert(!FFT::requires_workspace, "power-of-two sizes should not need a Bluestein workspace");
   static_assert(!fp16 || fpb % 2 == 0, "fp16 implicit batching needs an even FFTs-per-block");
-  const char* prec = fp16 ? "fp16" : "fp32";
-  // loose sanity bounds, not claims; fp16 includes rounding the input itself (see docs/decisions.md)
-  const double tol = fp16 ? 1e-2 : 1e-5;
 
   auto kernel = block_fft<FFT, IO>;
-  int smem_max, dev;
-  CUDA_CHECK(cudaGetDevice(&dev));
-  CUDA_CHECK(cudaDeviceGetAttribute(&smem_max, cudaDevAttrMaxSharedMemoryPerBlockOptin, dev));
+  int occ = 0;
+  const bool fits = int(FFT::shared_memory_size) <= smem_optin_max();
+  if (fits) {
+    CUDA_CHECK(cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, FFT::shared_memory_size));
+    CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&occ, kernel, FFT::max_threads_per_block,
+                                                             FFT::shared_memory_size));
+  }
 
-  char cfgs[512];
-  std::snprintf(cfgs, sizeof cfgs,
+  char c[512], label[128];
+  std::snprintf(c, sizeof c,
                 "\"impl\":\"cufftdx\",\"cufftdx\":\"%d.%d.%d\",\"precision\":\"%s\",\"n\":%u,\"ept\":%u,"
-                "\"ffts_per_block\":%u,\"block_dim\":[%u,%u,%u],\"smem_bytes\":%u",
-                CUFFTDX_VERSION_MAJOR, CUFFTDX_VERSION_MINOR, CUFFTDX_VERSION_PATCH, prec, N,
+                "\"ffts_per_block\":%u,\"block_dim\":[%u,%u,%u],\"smem_bytes\":%u,\"blocks_per_sm\":%d",
+                CUFFTDX_VERSION_MAJOR, CUFFTDX_VERSION_MINOR, CUFFTDX_VERSION_PATCH, fp16 ? "fp16" : "fp32", N,
                 FFT::elements_per_thread, fpb, FFT::block_dim.x, FFT::block_dim.y, FFT::block_dim.z,
-                FFT::shared_memory_size);
-
-  if (int(FFT::shared_memory_size) > smem_max) {
-    std::fprintf(stderr, "%s N=%u: skipped, needs %u B smem > %d B\n", prec, N, FFT::shared_memory_size, smem_max);
-    std::fprintf(f, "{\"experiment\":\"cufftdx_block_fft\",\"status\":\"skipped_smem\",%s,%s}\n", cfgs, prov.c_str());
+                FFT::shared_memory_size, occ);
+  std::snprintf(label, sizeof label, "cufftdx %s N=%5u ept=%2u fpb=%3u smem=%6u", fp16 ? "fp16" : "fp32", N,
+                FFT::elements_per_thread, fpb, FFT::shared_memory_size);
+  // loose sanity bounds; fp16 includes rounding the input itself (see docs/decisions.md)
+  bench b{"cufftdx_block_fft", c, N, fpb, fp16 ? 1e-2 : 1e-5, label};
+  if (!fits) {
+    skip(f, b, prov, "shared memory");
     return true;
   }
-  CUDA_CHECK(cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, FFT::shared_memory_size));
-  auto launch = [&](const dbuf<IO>& x, dbuf<IO>& y) {
-    kernel<<<unsigned(x.n / N / fpb), FFT::block_dim, FFT::shared_memory_size>>>(x.p, y.p);
-  };
-
-  // Accuracy: input generated in fp64, rounded to T for the kernel; the reference sees the unrounded fp64 input.
-  const size_t ab = round_up(acc_ffts, fpb);
-  dbuf<double2> x64(ab * N), r64(ab * N);
-  dbuf<IO> x(ab * N), y(ab * N);
-  std::vector<double> rel(acc_seeds), mx(acc_seeds);
-  for (int s = 0; s < acc_seeds; ++s) {
-    fill_random(x64, s);
-    fill_random(x, s);
-    fft_ref_fp64(x64, r64, N);
-    launch(x, y);
-    CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
-    err e = compare(to_host_fp64(y), to_host_fp64(r64));
-    rel[s] = e.rel_l2;
-    mx[s] = e.max_abs;
-  }
-  const double rel_med = quantile(rel, 0.5), mx_med = quantile(mx, 0.5);
-  const bool pass = rel_med < tol;
-  std::fprintf(stderr, "%s N=%5u ept=%2u fpb=%3u smem=%6u  rel_l2=%.3e max_abs=%.3e  %s\n", prec, N,
-               FFT::elements_per_thread, fpb, FFT::shared_memory_size, rel_med, mx_med, pass ? "ok" : "FAIL");
-
-  char acc[256];
-  std::snprintf(acc, sizeof acc,
-                "\"rel_l2_median\":%.6e,\"max_abs_median\":%.6e,\"acc_seeds\":%d,\"acc_batch\":%zu,"
-                "\"acc_tol\":%.1e,\"acc_pass\":%s",
-                rel_med, mx_med, acc_seeds, ab, tol, pass ? "true" : "false");
-  if (o.check) return pass;
-
-  int occ;
-  CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&occ, kernel, FFT::max_threads_per_block,
-                                                           FFT::shared_memory_size));
-  for (size_t batch : {size_t(fpb), round_up(big_batch, fpb)}) {
-    dbuf<IO> xb(batch * N), yb(batch * N);
-    fill_random(xb, 0);
-    timing t = time_ms([&] { launch(xb, yb); });
-    const double s = t.median * 1e-3;
-    const double bytes = 2.0 * batch * N * sizeof(IO);
-    std::fprintf(f,
-                 "{\"experiment\":\"cufftdx_block_fft\",\"status\":\"ok\",%s,\"batch\":%zu,\"grid\":%zu,"
-                 "\"blocks_per_sm\":%d,\"time_ms_median\":%.6f,\"time_ms_p25\":%.6f,\"time_ms_p75\":%.6f,"
-                 "\"warmup\":%d,\"iters\":%d,\"ffts_per_s\":%.6e,\"gbps_eff\":%.3f,%s,%s}\n",
-                 cfgs, batch, batch / fpb, occ, t.median, t.p25, t.p75, t.warmup, t.iters, batch / s, bytes / s * 1e-9,
-                 acc, prov.c_str());
-    std::fprintf(stderr, "    batch=%6zu  median=%.4f ms  iqr=[%.4f, %.4f]  %.1f GB/s\n", batch, t.median, t.p25,
-                 t.p75, bytes / s * 1e-9);
-  }
-  return pass;
+  return measure<IO>(f, b, a.check, prov, [&](const dbuf<IO>& x, dbuf<IO>& y) {
+    const size_t grid = x.n / N / fpb;
+    kernel<<<unsigned(grid), FFT::block_dim, FFT::shared_memory_size>>>(x.p, y.p);
+    return grid;
+  });
 }
 
 template <class T, unsigned... Ns>
-bool sweep(const opts& o, FILE* f, const std::string& prov) {
-  return (run<T, Ns>(o, f, prov) & ...);
+bool sweep(const args& a, FILE* f, const std::string& prov) {
+  return (run<T, Ns>(a, f, prov) & ...);
 }
 
 int main(int argc, char** argv) {
-  opts o;
-  for (int i = 1; i < argc; ++i) {
-    if (!std::strcmp(argv[i], "--check")) o.check = true;
-    else if (!std::strcmp(argv[i], "--out") && i + 1 < argc) o.out = argv[++i];
-    else {
-      std::fprintf(stderr, "usage: %s [--check] [--out results.jsonl]\n", argv[0]);
-      return 2;
-    }
-  }
-  FILE* f = o.out ? std::fopen(o.out, "a") : stdout;
+  args a;
+  if (!parse_args(argc, argv, a)) return 2;
+  FILE* f = a.out ? std::fopen(a.out, "a") : stdout;
   if (!f) {
-    std::perror(o.out);
+    std::perror(a.out);
     return 2;
   }
   const std::string prov = provenance(argc, argv);
-  bool ok = sweep<float, 256, 512, 1024, 2048, 4096, 8192, 16384>(o, f, prov);
-  ok &= sweep<__half, 256, 512, 1024, 2048, 4096, 8192, 16384>(o, f, prov);
-  if (o.out) std::fclose(f);
+  bool ok = sweep<float, 256, 512, 1024, 2048, 4096, 8192, 16384>(a, f, prov);
+  ok &= sweep<__half, 256, 512, 1024, 2048, 4096, 8192, 16384>(a, f, prov);
+  if (a.out) std::fclose(f);
   std::fprintf(stderr, ok ? "all accuracy checks passed\n" : "ACCURACY CHECK FAILED\n");
   return ok ? 0 : 1;
 }
