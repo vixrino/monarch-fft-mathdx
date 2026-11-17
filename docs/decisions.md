@@ -586,3 +586,40 @@ Remaining gap at N ≥ 2048 (0.45-0.48×): the instruction count and the
 data-path bank conflicts. Next candidates, in order:
 1. bank conflicts in the A2 epilogue writes and the transposed output write;
 2. 256 threads per block, to get more warps without more shared memory.
+
+## Phase 5: MCP server
+
+### What NVIDIA publishes for agents (checked 2026-11-17)
+- cuBLASDx: `llms.txt` plus the Agent BLAS Performance Guide in `markdown/`. Both are online
+  (docs.nvidia.com/cuda/cublasdx/llms.txt, HTTP 200) and in the package at `doc/cublasdx/html/`. The two
+  llms.txt files are the same size (4911 B).
+- cuFFTDx: none. `docs.nvidia.com/cuda/cufftdx/llms.txt` returns 404, the package has no `doc/cufftdx`,
+  and the HTML table of contents has no agent page. So I wrote
+  `agent_guides/cufftdx_agent_guide.md`, labeled unofficial at the top, in the cuBLASDx guide's style.
+  Every operator, trait and method in it was checked in the 26.10 headers, with the header path cited,
+  and every performance claim is either quoted from NVIDIA's performance page or measured here.
+- cuSolverDx and a MathDx-level llms.txt: 404 too.
+
+### Server design
+- **SDK:** `mcp` 2.3.0 (`mcp.server.mcpserver.MCPServer`, stdio). I read the installed package before
+  writing: in 2.x, `FastMCP` is renamed and importing `mcp.server.fastmcp` raises. Most examples online
+  are 1.x, so `mcp/requirements.txt` pins `>=2.3,<3`.
+- **No shell.**
+  - `mcp/runner.py` builds every command as an argv list, with `shell=False`.
+  - Arguments are `Literal` enums in the tool signatures and are re-checked in the runner; free-form
+    strings (benchmark key, SASS kernel filter) must match strict regexes.
+  - The repo and MathDx paths come from the server's environment, never from the client.
+  - Each command has a timeout (2–15 min), and returned logs are clipped at 20k characters.
+- **`diagnose` order:** build, then accuracy, then SASS. It stops at the first failure, because an agent
+  should fix one thing at a time. The SASS stage exists because of docs/agent_log.md: twice, the code was
+  numerically right and still not on tensor cores.
+- **Failing indices:** the harness now prints one `MISMATCH key=... fft=... k=... got=(...) ref=(...)` line
+  per failing configuration. It gives the worst element of seed 0, so an agent sees which FFT and which
+  frequency are wrong, not just a norm.
+- **Doc links** (`mcp/doc_links.py`) map compiler-message patterns and failure kinds to NVIDIA pages.
+  All 11 URLs returned HTTP 200 when written; anchors were checked in the shipped markdown.
+- **Build directory:** `build_mcp/` inside the repo the server points at, so it does not disturb `build/`.
+- **Testing:**
+  - Locally without a GPU: `tests/test_mcp_runner.py` (25 tests: rejection, parsers on nvcc/gcc/CMake
+    formats, a real timeout, an in-process session, a path-traversal attempt on the markdown resource).
+  - On the GPU: `mcp/smoke_client.py` over stdio with three injected bugs. Not run yet.

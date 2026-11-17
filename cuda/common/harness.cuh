@@ -103,17 +103,19 @@ inline void fft_ref_fp64(const dbuf<double2>& x, dbuf<double2>& y, int n) {
 
 struct err {
   double rel_l2, max_abs;
+  size_t worst;  // flat index of the largest |y - ref|
 };
 
 inline err compare(const std::vector<double2>& y, const std::vector<double2>& ref) {
   double num = 0, den = 0, mx = 0;
+  size_t worst = 0;
   for (size_t i = 0; i < y.size(); ++i) {
     double dx = y[i].x - ref[i].x, dy = y[i].y - ref[i].y;
     num += dx * dx + dy * dy;
     den += ref[i].x * ref[i].x + ref[i].y * ref[i].y;
-    mx = std::max(mx, std::hypot(dx, dy));
+    if (std::hypot(dx, dy) > mx) mx = std::hypot(dx, dy), worst = i;
   }
-  return {std::sqrt(num / den), mx};
+  return {std::sqrt(num / den), mx, worst};
 }
 
 inline double quantile(std::vector<double> v, double q) {
@@ -261,6 +263,7 @@ bool measure(FILE* f, const bench& b, const args& a, const std::string& prov, La
   dbuf<double2> x64(ab * b.n), r64(ab * b.n);
   dbuf<IO> x(ab * b.n), y(ab * b.n);
   std::vector<double> rel(acc_seeds), mx(acc_seeds);
+  struct { size_t i; double2 got, ref; } first{};
   for (int s = 0; s < acc_seeds; ++s) {
     fill_random(x64, s);
     fill_random(x, s);
@@ -268,13 +271,20 @@ bool measure(FILE* f, const bench& b, const args& a, const std::string& prov, La
     launch(x, y);
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
-    err e = compare(to_host_fp64(y), to_host_fp64(r64));
+    const auto yh = to_host_fp64(y), rh = to_host_fp64(r64);
+    err e = compare(yh, rh);
     rel[s] = e.rel_l2;
     mx[s] = e.max_abs;
+    if (s == 0) first = {e.worst, yh[e.worst], rh[e.worst]};
   }
   const double rel_med = quantile(rel, 0.5), mx_med = quantile(mx, 0.5);
   const bool pass = rel_med < b.tol;
   std::fprintf(stderr, "%s  rel_l2=%.3e max_abs=%.3e  %s\n", b.label.c_str(), rel_med, mx_med, pass ? "ok" : "FAIL");
+  // one machine-readable line per failing configuration, parsed by mcp/runner.py
+  if (!pass)
+    std::fprintf(stderr, "MISMATCH key=%s seed=0 fft=%zu k=%zu got=(%.6e,%.6e) ref=(%.6e,%.6e) rel_l2=%.3e tol=%.1e\n",
+                 b.key.c_str(), first.i / b.n, first.i % b.n, first.got.x, first.got.y, first.ref.x, first.ref.y,
+                 rel[0], b.tol);
   if (a.check) return pass;
 
   char acc[256];
