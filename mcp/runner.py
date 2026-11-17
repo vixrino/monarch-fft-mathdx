@@ -123,8 +123,9 @@ def compiler_errors(text, limit=20):
         m = NVCC_ERR.match(line) or GCC_ERR.match(line)
         if m:
             d = m.groupdict()
-            # nvcc prints the offending template instantiation on the following "detected during" lines
-            ctx = [l.strip() for l in lines[i + 1:i + 4] if l.strip().startswith(("detected during", "instantiation of"))]
+            # nvcc prints either "detected during instantiation of ..." or "detected during:" plus an indented list
+            ctx = [l.strip() for l in lines[i + 1:i + 5]
+                   if l.startswith((" ", "\t")) and not (NVCC_ERR.match(l) or GCC_ERR.match(l))][:3]
             e = {"file": d["file"], "line": int(d["line"]), "message": d["msg"].strip(), "context": ctx}
         elif m := CMAKE_ERR.match(line):
             e = {"file": m["file"] or "CMakeLists.txt", "line": int(m["line"] or 0),

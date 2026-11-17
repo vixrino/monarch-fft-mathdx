@@ -47,3 +47,13 @@ Each entry: what the agent (Claude Code) got wrong, how it was caught, fix.
   static MMA counts (64 instead of ~128 for 16×16, with ~3× the instructions)
   and confirmed with the opcode histogram; cause read in
   suggested/suggested_supermma.hpp and suggested/common.hpp.
+
+## Phase 5 (MCP tooling, not MathDx)
+- Wrote the server against `mcp` 2.x after reading the installed SDK; most online examples are 1.x
+  (`FastMCP`), whose import raises in 2.x. Caught before writing code, by reading the package.
+- Assumed the stdio server inherits the caller's environment. The SDK forwards only a safe list without
+  LD_LIBRARY_PATH, so on Colab every CUDA binary failed inside the server. Caught by the first GPU smoke
+  run: `env_check` failed in 0.0 s while `sass_check` (no driver needed) worked. Worse, `diagnose`
+  reported the load failure as an accuracy failure.
+- `--only` filtered measurements but not "skipped" records, so `benchmark` returned records without
+  timing fields. Caught by the second smoke run (KeyError in the client).

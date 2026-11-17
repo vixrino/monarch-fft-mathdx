@@ -638,3 +638,28 @@ Failed, for two reasons in my code, not in the kernels:
   smoke client did not print it; it does now.
 - **Unbuilt binary.** `run_tests` on a binary that was never built raised FileNotFoundError inside the
   tool. It is now a clean rejection that says which `build` call to make.
+
+### MCP smoke test passes (Colab T4, commit 7f792a2)
+`python3 mcp/smoke_client.py`, server over stdio, output pasted from the notebook (not stored in results/,
+since it is a functional test, not a measurement):
+- clean repo:
+  - `env_check` ok (4.4 s);
+  - the shell string is rejected;
+  - `diagnose(monarch_fft)` reaches stage "ok" (build, all accuracy checks, all fp16 kernels with MMA);
+  - `sass_check` finds 8 fp16 kernels with MMA;
+  - `benchmark(monarch:fp16:256:16x16)` returns the two records;
+  - `run_tests(cufftdx_block_fft)` before building is a clean rejection, and after `build` (38 s) it
+    passes 14 of 14 configurations.
+- injected compile error: stage "build", file and line 114, `identifier "a3" is undefined`. No doc link:
+  none of the patterns match a plain C++ error, which is right, since no MathDx page is relevant. The
+  instantiation context was cut to "detected during:" because nvcc prints an indented list after it; the
+  parser now keeps the indented lines.
+- injected conjugated twiddle: stage "accuracy", every fp16 configuration fails with rel L2 ≈ 1.41 (√2,
+  i.e. an error as large as the signal). The worst element shows the bug's signature directly:
+  `got = (-10.273, -35.531)`, `ref = (-10.275, 35.521)`, i.e. the imaginary part has the wrong sign.
+- injected default layouts in fp16: stage "tensor_cores". Accuracy passes and all 8 fp16 kernels are
+  listed without MMA, with links to the supermma card and the porting guide's instruction check. This
+  is the failure from docs/agent_log.md, now caught by one tool call.
+The benchmark tool's 163.8 GB/s for fp16 16×16 differs from the sweeps (195–197 GB/s). It is one
+configuration in a fresh process right after a build in the same session, and I have not looked into it;
+the tool returns the record, it is not a measurement campaign.
