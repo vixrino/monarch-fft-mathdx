@@ -688,3 +688,13 @@ No CMake per task. One nvcc line derived from the installed cuBLASDx config (`cu
 kernels. Some deliberately sit next to official examples (inverse FFT, fp16 I/O), because there a
 remembered example is most likely to be confidently wrong. Two (d4, h06) require tensor cores and check
 the SASS: the trap from docs/agent_log.md.
+
+### Model under test: Mistral Medium
+Lucas has a Mistral API key; `mistral-medium-latest` (Mistral Medium 3.5) is on Mistral's function-calling
+list (docs.mistral.ai/capabilities/function_calling, checked 2026-11-17). The SDK is `mistralai` 3.7.0: the
+import is `from mistralai.client import Mistral`, not the older `from mistralai import Mistral`, which
+raises ImportError in 3.x. `chat.complete` takes `tools`, `tool_choice`, `parallel_tool_calls`,
+`temperature` and `random_seed`.
+A side benefit: the tasks and reference solutions were written with Claude, so not evaluating Claude
+avoids grading a model on problems its own family wrote. The results describe Mistral Medium only, and
+the write-up must not generalize them to "LLM agents".

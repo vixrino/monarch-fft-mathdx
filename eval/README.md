@@ -1,7 +1,8 @@
 # Agent evaluation: does documentation plus an MCP loop help an agent write MathDx code?
 
-Second research question of this repo (CLAUDE.md). It compares one model under three conditions, with the
-same prompt, the same token budget and the same iteration budget:
+Second research question of this repo (CLAUDE.md). It compares one model, Mistral Medium
+(`mistral-medium-latest`, through the `mistralai` Python SDK), under three conditions, with the same prompt,
+the same token budget and the same iteration budget:
 
 | condition | tools the agent gets |
 |---|---|
