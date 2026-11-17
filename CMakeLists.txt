@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.26)
+cmake_minimum_required(VERSION 3.26...3.31)
 project(dxbench LANGUAGES CXX CUDA)
 
 set(CUDA_ARCH 75 CACHE STRING "Target SM, e.g. 75 for T4")

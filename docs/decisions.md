@@ -50,7 +50,19 @@ failed on this (`ls: cannot access '/content/mathdx/nvidia/mathdx/*/'`); the
 notebook now globs `$DX_DIR/*/nvidia/mathdx/*/`.
 
 ### ncu permission check in env_check.sh
-Colab and Kaggle run without root, and the driver defaults to restricting
-performance counters to admins, so `ncu` is expected to fail there with
-`ERR_NVGPUCTRPERM`. The script reports this explicitly so the plan for
-Nsight Compute metrics (VM with admin access) does not rest on a guess.
+I expected Colab and Kaggle to block performance counters for non-admin users
+(`ERR_NVGPUCTRPERM`), so the script reports that case explicitly. That
+expectation was wrong for Colab: on the first run (T4, driver 580.82.07,
+ncu 2025.3.1) `sm__cycles_elapsed.avg` was readable. So Nsight Compute metrics
+may not need a separate VM, at least on T4. Kaggle not checked yet.
+
+### `cmake_minimum_required(VERSION 3.26...3.31)`
+With a plain `3.26`, policy CMP0144 (3.27) is OLD and CMake warns that it
+ignores the `MATHDX_ROOT` variable as a find_package hint, because it looks
+like the upper-case `<PackageName>_ROOT`. The version range turns CMP0144 on
+and silences the warning; behaviour is the same since I pass `PATHS
+${MATHDX_ROOT}` explicitly anyway. Colab ships CMake 3.31.10.
+
+## Phase 0 environment (Colab, 2026-11-17)
+Tesla T4 (sm_75), driver 580.82.07, CUDA 13.0.88, GCC 13.3.0, CMake 3.31.10,
+MathDx 26.10.0 (cuFFTDx 1.8.0, cuBLASDx 0.8.0), commit fac318c.
