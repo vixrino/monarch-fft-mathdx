@@ -634,7 +634,7 @@ Failed, for two reasons in my code, not in the kernels:
   LD_LIBRARY_PATH and the CUDA variables, and mcp/README.md says to pass `-e LD_LIBRARY_PATH` when
   registering the server.
   The `diagnose` misreport is a lesson for the tool itself: a binary that cannot start looked like an
-  accuracy failure. The accuracy stage now returns stderr when no configuration line was parsed, so the
-  load error is visible.
+  accuracy failure. The accuracy stage already returns stderr when no mismatch line was parsed, but the
+  smoke client did not print it; it does now.
 - **Unbuilt binary.** `run_tests` on a binary that was never built raised FileNotFoundError inside the
   tool. It is now a clean rejection that says which `build` call to make.
