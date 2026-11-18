@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -23,6 +24,17 @@
   } while (0)
 
 namespace eval {
+
+// solve() gets a non-blocking stream, so a solution that ignores it and launches on the legacy stream is timed
+// on the wrong stream and a solution that launches on its own stream races the checks
+inline cudaStream_t stream() {
+  static cudaStream_t s = [] {
+    cudaStream_t s_;
+    EVAL_CHECK(cudaStreamCreateWithFlags(&s_, cudaStreamNonBlocking));
+    return s_;
+  }();
+  return s;
+}
 
 inline uint64_t splitmix64(uint64_t x) {
   x += 0x9E3779B97F4A7C15ull;
@@ -43,7 +55,11 @@ struct dev {
   explicit dev(size_t n_) : n(n_) { EVAL_CHECK(cudaMalloc(&p, std::max<size_t>(n, 1) * sizeof(T))); }
   ~dev() { cudaFree(p); }
   dev(const dev&) = delete;
-  void up(const std::vector<T>& h) { EVAL_CHECK(cudaMemcpy(p, h.data(), n * sizeof(T), cudaMemcpyHostToDevice)); }
+  // pageable cudaMemcpy may return before the DMA lands, and a non-blocking stream does not wait for it
+  void up(const std::vector<T>& h) {
+    EVAL_CHECK(cudaMemcpy(p, h.data(), n * sizeof(T), cudaMemcpyHostToDevice));
+    EVAL_CHECK(cudaDeviceSynchronize());
+  }
   std::vector<T> down() const {
     std::vector<T> h(n);
     EVAL_CHECK(cudaMemcpy(h.data(), p, n * sizeof(T), cudaMemcpyDeviceToHost));
@@ -89,15 +105,17 @@ inline err compare(const std::vector<double>& y, const std::vector<double>& ref)
 
 template <class F>
 double median_ms(F launch, int warmup = 3, int iters = 20) {
+  const cudaStream_t s = stream();
+  EVAL_CHECK(cudaDeviceSynchronize());
   cudaEvent_t a, b;
   EVAL_CHECK(cudaEventCreate(&a));
   EVAL_CHECK(cudaEventCreate(&b));
   for (int i = 0; i < warmup; ++i) launch();
   std::vector<float> t(iters);
   for (int i = 0; i < iters; ++i) {
-    EVAL_CHECK(cudaEventRecord(a));
+    EVAL_CHECK(cudaEventRecord(a, s));
     launch();
-    EVAL_CHECK(cudaEventRecord(b));
+    EVAL_CHECK(cudaEventRecord(b, s));
     EVAL_CHECK(cudaEventSynchronize(b));
     EVAL_CHECK(cudaEventElapsedTime(&t[i], a, b));
   }
@@ -108,7 +126,8 @@ double median_ms(F launch, int warmup = 3, int iters = 20) {
   return t[iters / 2];
 }
 
-// One line per run, parsed by the eval harness: overall pass, every (batch, seed) case, timing.
+// One JSON line per run: overall pass, every (batch, seed) case, timing. The harness reads it from the file named
+// by $EVAL_RESULT, not from stdout, so nothing the solution prints can pose as the result.
 struct report {
   std::string task;
   bool pass = true;
@@ -123,8 +142,13 @@ struct report {
     cases += buf;
   }
   void print(double ms, size_t timed_batch) const {
-    std::printf("{\"task\":\"%s\",\"status\":\"%s\",\"cases\":[%s],\"time_ms\":%.6f,\"timed_batch\":%zu}\n",
-                task.c_str(), pass ? "pass" : "fail", cases.c_str(), ms, timed_batch);
+    const char* path = std::getenv("EVAL_RESULT");
+    FILE* f = path ? std::fopen(path, "w") : nullptr;
+    for (FILE* o : {stdout, f})
+      if (o)
+        std::fprintf(o, "{\"task\":\"%s\",\"status\":\"%s\",\"cases\":[%s],\"time_ms\":%.6f,\"timed_batch\":%zu}\n",
+                     task.c_str(), pass ? "pass" : "fail", cases.c_str(), ms, timed_batch);
+    if (f) std::fclose(f);
   }
 };
 

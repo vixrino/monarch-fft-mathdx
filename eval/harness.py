@@ -36,6 +36,8 @@ NUM_PREDICT = 4096
 MAX_TOOL_CHARS = 6000
 OPTS = {"temperature": 0, "seed": 0, "num_ctx": NUM_CTX, "num_predict": NUM_PREDICT}
 MATHDX = re.compile(r"cufftdx|cublasdx|commondx|mathdx", re.I)
+# host cuFFT / cuBLAS would solve the tasks without MathDx; the hidden test links cuFFT for its own reference
+HOST_LIB = re.compile(r'#\s*include\s*[<"]((?:cufft|cufftXt|cublas|cublas_v2|cublasLt)\.h)[>"]|\b((?:cufft|cublas)[A-Z]\w*)\s*\(')
 FENCE = re.compile(r"^\s*```[\w+-]*\n(.*?)\n?```\s*$", re.S)
 
 SYSTEM = f"""You write CUDA C++ for an NVIDIA Tesla T4 (sm_75) with NVIDIA MathDx 26.10 (cuFFTDx 1.8.0, \
@@ -163,28 +165,39 @@ class Run:
         shutil.copy(os.path.join(task_dir, "task.h"), self.work)
         self.sol = os.path.join(self.work, "solution.cu")
         self.misuse, self.builds = set(), 0
+        self.stub = os.path.join(self.work, "stub_main.cu")
+        open(self.stub, "w").write('#include "task.h"\nint main() { return &solve == nullptr; }\n')
 
-    def build(self, sources, out, extra=(), link=True):
+    def build(self, sources, out, extra=(), link=True, count_misuse=False):
         rc, so, se = sh(validate.nvcc_cmd(self.work, sources, out, extra, link), 600)
         self.builds += 1
         errs = compiler_errors(so + se)
-        self.misuse |= {e["message"] for e in errs if MATHDX.search(e["message"] + " ".join(e.get("context", [])) + e["file"])}
-        return rc == 0, errs, (so + se)[-1500:]
+        if count_misuse:  # only compile() and the final grade, which every condition runs alike
+            self.misuse |= {e["message"] for e in errs
+                            if (e["file"].endswith("solution.cu") or "mathdx" in e["file"].lower())
+                            and MATHDX.search(e["message"] + " " + e["file"])}
+        for e in errs:  # absolute paths would name hidden/test.cu
+            e["file"] = os.path.basename(e["file"])
+        return rc == 0, errs, (so + se)[-1500:].replace(self.task_dir, "<task>").replace(self.work, "<work>")
 
-    def write_solution(self, code):
+    def write_solution(self, code="", **_):
         # a markdown fence around the file is a chat-format slip, not a MathDx error: strip it in every condition
+        code = str(code)
         m = FENCE.match(code)
         open(self.sol, "w").write(m[1] if m else code)
         return {"ok": True, "bytes": len(m[1] if m else code), "stripped_markdown_fence": bool(m)}
 
-    def compile(self):
+    def compile(self, **_):
         if not os.path.exists(self.sol):
             return {"ok": False, "error": "no solution.cu yet; call write_solution first"}
-        ok, errs, tail = self.build([self.sol], self.sol + ".o", link=False)
+        # linked against a stub main so that a missing or mis-declared solve() fails here, not only at grading
+        ok, errs, tail = self.build([self.sol, self.stub], os.path.join(self.work, "stub_exe"), count_misuse=True)
         return {"ok": ok, "errors": errs} if ok or errs else {"ok": False, "log_tail": tail}
 
-    def search_docs(self, query):
-        q, hits = query.lower(), []
+    def search_docs(self, query="", **_):
+        q, hits = str(query).lower(), []
+        if not q:
+            return {"error": "empty query"}
         rank = lambda p: ("doc/", "example/", "include/").index(p.split("/")[0] + "/")
         for p in sorted(self.corpus, key=rank):
             for i, line in enumerate(self.corpus[p]):
@@ -192,10 +205,10 @@ class Run:
                     hits.append(f"{p}:{i + 1}: {line.strip()[:160]}")
         return {"n_hits": len(hits), "hits": hits[:30]}
 
-    def read_doc(self, path, start=1, count=120):
+    def read_doc(self, path="", start=1, count=120, **_):
         if path not in self.corpus:
             return {"error": f"unknown path {path!r}",
-                    "close_matches": difflib.get_close_matches(path, list(self.corpus), 5, 0.4)}
+                    "close_matches": difflib.get_close_matches(str(path), list(self.corpus), 5, 0.4)}
         lines = self.corpus[path]
         start, count = max(1, int(start)), min(max(1, int(count)), 200)
         return {"path": path, "n_lines": len(lines),
@@ -208,30 +221,26 @@ class Run:
         ok, errs, tail = self.build([os.path.join(self.task_dir, "hidden", "test.cu"), self.sol], exe,
                                     ("-DEVAL_PUBLIC",))
         if not ok:
-            return None, {"stage": "build", "errors": [e for e in errs if e["file"].endswith("solution.cu")] or errs,
-                          **({} if errs else {"log_tail": tail})}
+            mine = [e for e in errs if e["file"] == "solution.cu"]
+            return None, {"stage": "build", "errors": mine or errs, **({} if errs else {"log_tail": tail})}
         return exe, None
 
-    def run_public_test(self):
+    def run_public_test(self, **_):
         exe, err = self.public_exe()
-        if err:
-            return err
-        rc, so, se = sh([exe], 120)
-        return validate.last_json(so) or {"status": "no_output", "returncode": rc, "stderr": se[-1500:]}
+        return err or validate.run_test(exe, 120)
 
-    def sass_check(self):
+    def sass_check(self, **_):
         if not os.path.exists(self.sol):
             return {"error": "no solution.cu yet; call write_solution first"}
         obj = self.sol + ".o"
         ok, errs, _ = self.build([self.sol], obj, link=False)
         return {"kernels": sass_counts(obj)} if ok else {"stage": "build", "errors": errs}
 
-    def diagnose(self):
+    def diagnose(self, **_):
         exe, err = self.public_exe()
         if err:
             return {**err, "docs": local_docs(err.get("errors", []))}
-        rc, so, se = sh([exe], 120)
-        res = validate.last_json(so) or {"status": "no_output", "returncode": rc, "stderr": se[-1500:]}
+        res = validate.run_test(exe, 120)
         if res.get("status") != "pass":
             return {"stage": "accuracy", "result": res}
         if self.meta.get("requires_mma"):
@@ -240,49 +249,65 @@ class Run:
                 return {"stage": "tensor_cores", "kernels": ks, "docs": NO_MMA_DOCS}
         return {"stage": "ok", "result": res}
 
+    def library_check(self):
+        src = open(self.sol, errors="replace").read()
+        need = {"cufftdx": ["cufftdx"], "cublasdx": ["cublasdx"], "both": ["cufftdx", "cublasdx"]}[self.meta["library"]]
+        missing = [l for l in need if not re.search(rf'#\s*include\s*[<"]([\w/]*/)?{l}\.hpp[>"]', src)]
+        host = sorted(set(HOST_LIB.findall(src)))
+        return {"library_used": not missing and not host, "library_missing": missing, "host_library_calls": host}
+
     def grade(self):
         if not os.path.exists(self.sol):
-            return {"compiles": False, "correct": False, "hidden": None}
+            return {"compiles": False, "correct": False, "solved": False, "hidden": None}
         exe = os.path.join(self.work, "hidden_exe")
-        ok, errs, tail = self.build([os.path.join(self.task_dir, "hidden", "test.cu"), self.sol], exe)
+        ok, errs, tail = self.build([os.path.join(self.task_dir, "hidden", "test.cu"), self.sol], exe,
+                                    count_misuse=True)
+        g = {"compiles": ok, **self.library_check()}
         if not ok:
-            return {"compiles": False, "correct": False, "hidden": {"status": "build_error", "errors": errs[:5]}}
-        rc, so, se = sh([exe], 300)
-        res = validate.last_json(so) or {"status": "no_output", "returncode": rc, "stderr": se[-1500:]}
-        g = {"compiles": True, "hidden": res, "correct": res.get("status") == "pass"}
-        if self.meta.get("requires_mma"):
-            g["hmma_lines"] = sum(k["mma"] for k in sass_counts(exe))
+            g["hidden"] = {"status": "build_error", "errors": errs[:5], **({} if errs else {"log_tail": tail})}
+        else:
+            g["hidden"] = validate.run_test(exe, 300)
+        g["correct"] = ok and g["hidden"].get("status") == "pass"
+        if ok and self.meta.get("requires_mma"):
+            g["hmma_lines"] = validate.hmma_lines(exe)
             g["correct"] &= g["hmma_lines"] > 0
+        g["solved"] = g["correct"] and g["library_used"]
         return g
 
 
-def agent(model, cond, task_dir, meta, corpus, tmp):
+def agent(client, model, cond, task_dir, meta, corpus, tmp):
     run = Run(task_dir, meta, corpus, tmp)
     names = CONDITIONS[cond]
     spec, h = (open(os.path.join(task_dir, f)).read() for f in ("spec.md", "task.h"))
     msgs = [{"role": "system", "content": SYSTEM},
             {"role": "user", "content": f"spec.md:\n```\n{spec}\n```\n\ntask.h:\n```cpp\n{h}\n```"}]
-    t0, tok_in, tok_out, end, calls = time.time(), 0, 0, "turns", {}
+    t0, tok_in, tok_out, end, calls, last = time.time(), 0, 0, "turns", {}, None
     for turn in range(1, MAX_TURNS + 1):
-        r = ollama.chat(model=model, messages=msgs, tools=[TOOLS[n] for n in names], options=OPTS, think=False)
+        try:
+            r = client.chat(model=model, messages=msgs, tools=[TOOLS[n] for n in names], options=OPTS, think=False)
+        except Exception as e:  # server OOM, restart or timeout: grade what was written, keep the sweep going
+            end = f"error: {type(e).__name__}: {str(e)[:200]}"
+            break
+        last = r.prompt_eval_count
         tok_in, tok_out = tok_in + (r.prompt_eval_count or 0), tok_out + (r.eval_count or 0)
-        m = r.message.model_dump(exclude_none=True)
-        msgs.append(m)
-        if not r.message.tool_calls:
+        msgs.append(r.message.model_dump(exclude_none=True))
+        tcs = r.message.tool_calls or []
+        if not tcs:
             msgs.append({"role": "user", "content": NUDGE})
-        for tc in r.message.tool_calls or []:
+        # a submit among several calls ends the run after the others, so a write next to it is not lost
+        for tc in sorted(tcs, key=lambda tc: tc.function.name == "submit"):
             name, args = tc.function.name, tc.function.arguments or {}
             calls[name] = calls.get(name, 0) + 1
             if name == "submit":
                 end = "submit"
-                break
+                continue
             if name not in names:
                 out = {"error": f"unknown tool {name!r}; available: {names}"}
             else:
                 try:
-                    out = getattr(run, name)(**(json.loads(args) if isinstance(args, str) else args))
-                except (TypeError, ValueError) as e:
-                    out = {"error": f"bad arguments: {e}"}
+                    out = getattr(run, name)(**args)
+                except Exception as e:
+                    out = {"error": f"{type(e).__name__}: {e}"}
             msgs.append({"role": "tool", "tool_name": name, "content": clip(out)})
         if end == "submit":
             break
@@ -291,7 +316,8 @@ def agent(model, cond, task_dir, meta, corpus, tmp):
             break
     rec = {"task": meta["id"], "split": meta["split"], "library": meta["library"], "condition": cond,
            "model": model, "end": end, "iterations": turn, "wall_s": round(time.time() - t0, 1),
-           "tokens_in": tok_in, "tokens_out": tok_out, "last_prompt_tokens": r.prompt_eval_count, "tool_calls": calls}
+           "tokens_in": tok_in, "tokens_out": tok_out, "last_prompt_tokens": last, "tool_calls": calls,
+           "builds": run.builds}
     rec.update(run.grade())
     rec["api_misuse_compile"] = len(run.misuse)
     rec["api_misuse_messages"] = sorted(run.misuse)[:20]
@@ -320,7 +346,8 @@ def main():
     os.makedirs(d, exist_ok=True)
     runs_path = out_path(d, "eval_runs")
     tr_path = runs_path.replace("_eval_runs", "_eval_transcripts")
-    digest = next((m.digest for m in ollama.list().models if m.model == a.model), None)
+    client = ollama.Client(timeout=900)  # one turn is at most NUM_PREDICT tokens at ~40 tok/s
+    digest = next((m.digest for m in client.list().models if m.model == a.model), None)
     prov = {**validate.provenance(), "model_digest": digest, "ollama": subprocess.run(
         ["ollama", "--version"], capture_output=True, text=True).stdout.strip(),
         "budget": {"max_turns": MAX_TURNS, "num_ctx": NUM_CTX, "ctx_stop": CTX_STOP, "num_predict": NUM_PREDICT,
@@ -336,7 +363,7 @@ def main():
             ref_ms = ref.get("hidden", {}).get("time_ms") if ref["valid"] else None
             print(f"{t}: reference valid={ref['valid']} time_ms={ref_ms}", flush=True)
             for c in a.conditions:
-                rec, msgs = agent(a.model, c, task_dir, meta, corpus, tmp)
+                rec, msgs = agent(client, a.model, c, task_dir, meta, corpus, tmp)
                 ms = (rec.get("hidden") or {}).get("time_ms")
                 rec.update({"ref_ms": ref_ms, "time_ms": ms if rec["correct"] else None,
                             "perf_vs_ref": round(ref_ms / ms, 3) if rec["correct"] and ref_ms and ms else None})
@@ -345,7 +372,7 @@ def main():
                 ft.write(json.dumps({"task": t, "condition": c, "messages": msgs}, default=str) + "\n")
                 ft.flush()
                 print(f"  {c}: end={rec['end']:7s} iters={rec['iterations']:2d} compiles={rec['compiles']!s:5s} "
-                      f"correct={rec['correct']!s:5s} misuse={rec['api_misuse']} perf={rec['perf_vs_ref']} "
+                      f"correct={rec['correct']!s:5s} solved={rec['solved']!s:5s} misuse={rec['api_misuse']} perf={rec['perf_vs_ref']} "
                       f"tok={rec['tokens_in']}+{rec['tokens_out']} wall={rec['wall_s']}s tools={rec['tool_calls']}",
                       flush=True)
     print(runs_path)

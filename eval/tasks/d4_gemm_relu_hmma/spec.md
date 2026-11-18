@@ -11,7 +11,7 @@ Implement `solve` from `task.h` with cuBLASDx, block execution, for a Tesla T4 (
 - The products must accumulate in fp32 (inputs fp16, accumulator fp32).
 - **The GEMM must run on the tensor cores.** The test inspects the SASS of your solution and fails it if
   no `HMMA` instruction is present, even when the numbers are right.
-- `batch` is any integer from 1 to 2^16. Launch on `stream`; do not synchronize.
+- `batch` is any integer from 1 to 2^16. Launch on `stream`; do not synchronize. `stream` is a non-blocking stream (it does not wait for the legacy default stream).
 - Accuracy: relative L2 error ≤ 1e-4 against an FP64 reference computed from the same fp16 inputs.
 - Performance: bias and ReLU are applied before the result reaches global memory, not in a second kernel.
 

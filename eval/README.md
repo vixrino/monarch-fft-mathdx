@@ -69,7 +69,9 @@ are run once per condition at the end, with no prompt or harness change after th
 
 - **compiles:** the final solution builds.
 - **correct:** the hidden test passes, i.e. rel L2 against an FP64 reference under the spec's tolerance on
-  every hidden size and seed.
+  every hidden size and seed (including the timed batch, 2^14), plus HMMA in the binary where required.
+- **library_used:** solution.cu includes the required MathDx header(s) and calls no host cuFFT/cuBLAS.
+  **solved** = correct and library_used; this is the headline count.
 - **api_misuse:** count of compiler errors that name a MathDx symbol, plus the hidden-test check for the
   traps in meta.json (e.g. a "tensor cores required" task whose kernel has no MMA).
 - **iterations:** model turns until the agent submits or the budget ends.

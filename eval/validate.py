@@ -25,16 +25,32 @@ def nvcc_cmd(task_dir, sources, out, extra=(), link=True):
              f"-I{task_dir}"] + list(extra) + sources + (["-lcufft"] if link else ["-c"]) + ["-o", out])
 
 
-def sh(argv, timeout):
-    p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+def sh(argv, timeout, env=None):
+    try:
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, env=env)
+    except subprocess.TimeoutExpired:
+        return None, "", f"timed out after {timeout} s"
     return p.returncode, p.stdout, p.stderr
 
 
-def last_json(text):
-    for line in reversed(text.strip().splitlines()):
-        if line.startswith("{"):
-            return json.loads(line)
-    return None
+def run_test(exe, timeout):
+    # the test writes its JSON line to $EVAL_RESULT; stdout belongs to the solution too, so it is not trusted
+    path = exe + ".result.json"
+    if os.path.exists(path):
+        os.remove(path)
+    rc, so, se = sh([exe], timeout, {**os.environ, "EVAL_RESULT": path})
+    try:
+        res = json.load(open(path))
+    except (OSError, ValueError):
+        return {"status": "no_result", "returncode": rc, "stdout": so[-1000:], "stderr": se[-1500:]}
+    if rc != 0 and res.get("status") == "pass":
+        res = {**res, "status": "crash_after_pass", "returncode": rc, "stderr": se[-1500:]}
+    return res
+
+
+def hmma_lines(exe):
+    sass = sh(["cuobjdump", "-sass", exe], 300)[1]
+    return sum("HMMA" in l for l in sass.splitlines())
 
 
 def provenance():
@@ -58,12 +74,9 @@ def validate(task_dir, tmp):
         if rc != 0:
             out[variant] = {"status": "build_error", "log": (so + se)[-3000:]}
             continue
-        rc, so, se = sh([exe], 600)
-        res = last_json(so) or {"status": "no_output", "stderr": se[-2000:]}
-        out[variant] = res
+        out[variant] = run_test(exe, 600)
         if variant == "hidden" and meta.get("requires_mma"):
-            sass = subprocess.run(["cuobjdump", "-sass", exe], capture_output=True, text=True).stdout
-            out["hmma_lines"] = sum("HMMA" in l for l in sass.splitlines())
+            out["hmma_lines"] = hmma_lines(exe)
     ok = all(out.get(v, {}).get("status") == "pass" for v in ("hidden", "public"))
     if meta.get("requires_mma"):
         ok &= out.get("hmma_lines", 0) > 0

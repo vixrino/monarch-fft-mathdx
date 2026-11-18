@@ -7,7 +7,7 @@ Implement `solve` from `task.h` with cuFFTDx, block execution, for a Tesla T4 (s
   centered order: `y[b][m] = X[b][(m + N/2) mod N]`, so the zero frequency lands at `y[b][N/2]`
   (NumPy's `fftshift`).
 - `batch` is any integer from 1 to 2^16.
-- `x` and `y` do not alias. Launch on `stream`; do not synchronize.
+- `x` and `y` do not alias. Launch on `stream`; do not synchronize. `stream` is a non-blocking stream (it does not wait for the legacy default stream).
 - Accuracy: relative L2 error ≤ 1e-5 against an FP64 reference on the same inputs.
 - Performance: the reordering must not cost an extra pass over global memory.
 

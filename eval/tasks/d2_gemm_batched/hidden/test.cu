@@ -9,7 +9,7 @@ static eval::err check(int batch, uint64_t seed) {
   eval::dev<float> da(a.size()), db(b.size()), dc(a.size());
   da.up(a);
   db.up(b);
-  solve(da.p, db.p, dc.p, batch, 0);
+  solve(da.p, db.p, dc.p, batch, eval::stream());
   EVAL_CHECK(cudaGetLastError());
   EVAL_CHECK(cudaDeviceSynchronize());
   auto c = dc.down();
@@ -27,16 +27,17 @@ static eval::err check(int batch, uint64_t seed) {
 int main() {
   eval::report rep{"d2_gemm_batched"};
 #ifdef EVAL_PUBLIC
-  for (int b : {2}) rep.add(b, 1, check(b, 1), 1e-5);
+  for (int b : {7}) rep.add(b, 1, check(b, 1), 1e-5);
 #else
   for (int b : {1, 5, 300})
     for (uint64_t s : {21, 22}) rep.add(b, s, check(b, s), 1e-5);
+  rep.add(1 << 14, 23, check(1 << 14, 23), 1e-5);
 #endif
   const int tb = 1 << 14;
   eval::dev<float> a(tb * kE), b(tb * kE), c(tb * kE);
   EVAL_CHECK(cudaMemset(a.p, 0x3c, a.n * sizeof(float)));
   EVAL_CHECK(cudaMemset(b.p, 0x3c, b.n * sizeof(float)));
-  const double ms = eval::median_ms([&] { solve(a.p, b.p, c.p, tb, 0); });
+  const double ms = eval::median_ms([&] { solve(a.p, b.p, c.p, tb, eval::stream()); });
   rep.print(ms, tb);
   return rep.pass ? 0 : 1;
 }

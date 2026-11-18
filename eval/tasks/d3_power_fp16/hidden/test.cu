@@ -11,7 +11,7 @@ static eval::err check(int batch, uint64_t seed) {
   eval::dev<__half2> x(h.size());
   eval::dev<float> p(h.size());
   x.up(h);
-  solve(x.p, p.p, batch, 0);
+  solve(x.p, p.p, batch, eval::stream());
   EVAL_CHECK(cudaGetLastError());
   EVAL_CHECK(cudaDeviceSynchronize());
   auto r = eval::fft64(h64, kN, CUFFT_FORWARD);
@@ -24,16 +24,17 @@ static eval::err check(int batch, uint64_t seed) {
 int main() {
   eval::report rep{"d3_power_fp16"};
 #ifdef EVAL_PUBLIC
-  for (int b : {4}) rep.add(b, 1, check(b, 1), 1e-2);
+  for (int b : {7}) rep.add(b, 1, check(b, 1), 1e-2);
 #else
   for (int b : {1, 2, 3, 501})
     for (uint64_t s : {31, 32}) rep.add(b, s, check(b, s), 1e-2);
+  rep.add(1 << 14, 33, check(1 << 14, 33), 1e-2);
 #endif
   const int tb = 1 << 14;
   eval::dev<__half2> x(size_t(tb) * kN);
   eval::dev<float> p(size_t(tb) * kN);
   EVAL_CHECK(cudaMemset(x.p, 0x2c, x.n * sizeof(__half2)));
-  const double ms = eval::median_ms([&] { solve(x.p, p.p, tb, 0); });
+  const double ms = eval::median_ms([&] { solve(x.p, p.p, tb, eval::stream()); });
   rep.print(ms, tb);
   return rep.pass ? 0 : 1;
 }

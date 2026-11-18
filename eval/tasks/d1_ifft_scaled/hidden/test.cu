@@ -10,7 +10,7 @@ static eval::err check(int batch, uint64_t seed) {
   }
   eval::dev<float2> x(h.size()), y(h.size());
   x.up(h);
-  solve(x.p, y.p, batch, 0);
+  solve(x.p, y.p, batch, eval::stream());
   EVAL_CHECK(cudaGetLastError());
   EVAL_CHECK(cudaDeviceSynchronize());
   auto r = eval::fft64(h64, kN, CUFFT_INVERSE);
@@ -26,15 +26,16 @@ static eval::err check(int batch, uint64_t seed) {
 int main() {
   eval::report rep{"d1_ifft_scaled"};
 #ifdef EVAL_PUBLIC
-  for (int b : {4}) rep.add(b, 1, check(b, 1), 1e-5);
+  for (int b : {7}) rep.add(b, 1, check(b, 1), 1e-5);
 #else
   for (int b : {1, 3, 257, 1000})
     for (uint64_t s : {11, 12}) rep.add(b, s, check(b, s), 1e-5);
+  rep.add(1 << 14, 13, check(1 << 14, 13), 1e-5);
 #endif
   const int tb = 1 << 14;
   eval::dev<float2> x(size_t(tb) * kN), y(size_t(tb) * kN);
   EVAL_CHECK(cudaMemset(x.p, 0x3c, x.n * sizeof(float2)));  // nonzero: zeros draw less power and inflate clocks
-  const double ms = eval::median_ms([&] { solve(x.p, y.p, tb, 0); });
+  const double ms = eval::median_ms([&] { solve(x.p, y.p, tb, eval::stream()); });
   rep.print(ms, tb);
   return rep.pass ? 0 : 1;
 }

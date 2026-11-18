@@ -7,7 +7,7 @@ Implement `solve` from `task.h` with cuFFTDx, block execution, half precision, f
 - Output `p`: `batch * 512` floats, `p[b*512 + k] = |X_b[k]|^2` where `X_b` is the forward DFT of signal b
   (no scaling), computed in half precision with cuFFTDx.
 - `batch` is any integer from 1 to 2^16.
-- Launch on `stream`; do not synchronize.
+- Launch on `stream`; do not synchronize. `stream` is a non-blocking stream (it does not wait for the legacy default stream).
 - Accuracy: relative L2 error of `p` ≤ 1e-2 against an FP64 reference computed from the same fp16 inputs.
   An fp16 FFT is expected to be off by about 1e-3 relative; the tolerance leaves room for that, not for a
   layout bug.

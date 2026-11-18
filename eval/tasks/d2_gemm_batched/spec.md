@@ -9,7 +9,7 @@ Implement `solve` from `task.h` with cuBLASDx, block execution, for a Tesla T4 (
   - `C_b` column-major: element (i, j) at `C[b*1024 + i + j*32]`. Overwrite C; its input content is
     undefined.
 - `batch` is any integer from 1 to 2^16.
-- Launch on `stream`; do not synchronize.
+- Launch on `stream`; do not synchronize. `stream` is a non-blocking stream (it does not wait for the legacy default stream).
 - Accuracy: relative L2 error ≤ 1e-5 against an FP64 reference on the same inputs.
 - Performance: the reference solution computes one product per thread block with the operands staged in
   shared memory; a host loop launching one GEMM per matrix is far too slow.

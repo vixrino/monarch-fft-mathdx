@@ -15,7 +15,7 @@ static eval::err check(int batch, uint64_t seed) {
   da.up(a);
   db.up(b);
   dbias.up(bias);
-  solve(da.p, db.p, dbias.p, dc.p, batch, 0);
+  solve(da.p, db.p, dbias.p, dc.p, batch, eval::stream());
   EVAL_CHECK(cudaGetLastError());
   EVAL_CHECK(cudaDeviceSynchronize());
   auto c = dc.down();
@@ -34,10 +34,11 @@ static eval::err check(int batch, uint64_t seed) {
 int main() {
   eval::report rep{"d4_gemm_relu_hmma"};
 #ifdef EVAL_PUBLIC
-  for (int b : {2}) rep.add(b, 1, check(b, 1), 1e-4);
+  for (int b : {7}) rep.add(b, 1, check(b, 1), 1e-4);
 #else
   for (int b : {1, 3, 77})
     for (uint64_t s : {41, 42}) rep.add(b, s, check(b, s), 1e-4);
+  rep.add(1 << 14, 43, check(1 << 14, 43), 1e-4);
 #endif
   const int tb = 1 << 14;
   eval::dev<__half> a(tb * kE), b(tb * kE);
@@ -45,7 +46,7 @@ int main() {
   EVAL_CHECK(cudaMemset(a.p, 0x2c, a.n * sizeof(__half)));
   EVAL_CHECK(cudaMemset(b.p, 0x2c, b.n * sizeof(__half)));
   EVAL_CHECK(cudaMemset(bias.p, 0, kM * sizeof(float)));
-  const double ms = eval::median_ms([&] { solve(a.p, b.p, bias.p, c.p, tb, 0); });
+  const double ms = eval::median_ms([&] { solve(a.p, b.p, bias.p, c.p, tb, eval::stream()); });
   rep.print(ms, tb);
   return rep.pass ? 0 : 1;
 }

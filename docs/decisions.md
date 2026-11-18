@@ -762,3 +762,42 @@ Data: `results/tesla_t4/2026-11-18_eval_runs.jsonl` and `..._eval_transcripts.js
   part of what the eval measures, and B/C can find it with one search.
 - **Note on the corpus.** The Colab package has 855 corpus files against 490 in my local copy: it also ships
   docs for other Dx libraries (cuRANDDx seen in C's search hits). The corpus is still "the installed package".
+
+### Pre-run review by three subagents (2026-11-18), before dev run 2
+Three reviewer agents read the harness, the grading and the five tasks against the ollama 0.6.3 source and the
+dev-run-1 transcripts. What I fixed:
+- **Spoofable result.** The solution runs in the same process as the test, so anything it printed last (an
+  atexit handler, a destructor) could be read as the pass line. The test now writes its JSON line to the file
+  in `$EVAL_RESULT`, and the harness reads only that file. A pass followed by a nonzero exit becomes
+  `crash_after_pass`.
+- **Library use not checked.** A plain CUDA kernel, or host cuFFT (the test links `-lcufft` for its own
+  reference), passed d1, d3 and d5. `library_check` greps solution.cu for the required `.hpp` include and for
+  host cuFFT/cuBLAS includes or calls. Records keep `correct` (numbers, plus HMMA where required) and add
+  `library_used` and `solved = correct and library_used`.
+- **`stream` never exercised.** The tests passed 0, so a solution that ignored the stream was timed correctly
+  by accident. Tests now pass a `cudaStreamNonBlocking` stream and record the timing events on it. `dev::up`
+  syncs the device, because a pageable cudaMemcpy can return before the copy lands and a non-blocking stream
+  does not wait for it. The specs now say the stream is non-blocking.
+- **Timed batch unchecked.** A solve that skipped large batches would have gotten a huge perf_vs_ref. Each
+  hidden test now also checks batch 2^14, the timed size, with one extra seed.
+- **Public test.** It now uses batch 7 (odd, and not a multiple of the FFTs per block at these sizes), not 4 or
+  2, so it can expose a tail block or an unpaired fp16 FFT. No hidden test uses 7.
+- **Link errors invisible.** compile() built with -c only, so a missing or static `solve`, or a second `main`,
+  passed. It now links solution.cu against a stub main that takes `&solve`.
+- **Crashes that would end the sweep.** An `AttributeError` from a tool, an ollama `ResponseError` or
+  connection error, a `TimeoutExpired` in the reference validation, or a malformed JSON line. Tool calls now
+  catch all exceptions. A failed chat call ends the run with `end="error: ..."` and still grades it. The client
+  has a 900 s timeout (the default is none), and validate.sh returns on timeout.
+- **submit next to a write.** submit now runs after the other calls in the same reply.
+- **Misuse inflated in C.** C builds more often (public test, SASS, diagnose), so its misuse count grew from
+  extra attempts. Misuse is now counted only from compile() and the final grade, which every condition runs.
+  It looks at the message and the file only, not the echoed source line.
+- **Wasted turns.** Tools ignore unexpected arguments: in run 1 the model passed `compile(code=...)` twice.
+- **Hidden path leak.** Absolute paths in tool output named `hidden/test.cu`; errors now carry basenames.
+
+Known gaps I am keeping, reported as limitations:
+- **d4 tensor cores.** HMMA is counted over the whole binary, so a never-launched HMMA kernel, or hand-written
+  WMMA next to a cublasdx include, would pass. Closing this needs runtime tensor-pipe counters (ncu) per run.
+- **d3 fp16.** Nothing enforces fp16 compute: an fp32 FFT also meets 1e-2.
+- **C's prompt is longer.** C's six extra tool schemas lengthen every prompt, so it reaches CTX_STOP a little
+  earlier. The records keep last_prompt_tokens.
