@@ -3,6 +3,7 @@
 # Selection is fixed on repeat 1 and reported on repeats 2-3 (docs/decisions.md, "Selection and repeats"):
 #   - cuFFTDx tuned:   fastest EPT x FPB (grid or default) at the throughput batch, accuracy passing;
 #   - cuFFTDx default: the library's suggested configuration;
+#   - cuFFTDx accurate: lowest rel L2 over the grid (accuracy only; seeds are fixed, so repeats do not change it);
 #   - Monarch:         fastest factorization n1 x n2.
 # A ratio whose range over repeats 2-3 contains 1.0 is reported as a tie.
 #   python3 scripts/final.py results/tesla_t4/<d>_sweep_a.jsonl <..._b> <..._c> [--figures docs/figures/tesla_t4]
@@ -47,6 +48,10 @@ def select(rep1):
             cur = sel.get((role, prec, n))
             if role == "default" or cur is None or r["gbps_eff"] > rep1[cur]["gbps_eff"]:
                 sel[(role, prec, n)] = k
+        if impl == "cufftdx":
+            cur = sel.get(("accurate", prec, n))
+            if cur is None or r["rel_l2_median"] < rep1[cur]["rel_l2_median"]:
+                sel[("accurate", prec, n)] = k
     return sel
 
 
@@ -106,7 +111,7 @@ def main():
     err = defaultdict(list)
     for prec in plot.PRECS:
         for n in sorted({k[2] for k in sel if k[1] == prec}):
-            for role in ("default", "tuned", "monarch"):
+            for role in ("default", "tuned", "accurate", "monarch"):
                 k = sel.get((role, prec, n))
                 if not k:
                     continue
@@ -115,12 +120,13 @@ def main():
                 err[(role, prec)].append((n, t, c))
                 print(f"| {prec} | {n} | {role} ({cfg_name(k)}) | {t:.2e} | {c:.2e} | {t / c:.2f} |" if c else
                       f"| {prec} | {n} | {role} | {t:.2e} | - | - |")
-    print("\nError ratio cuFFTDx tuned / Monarch:")
-    for prec in plot.PRECS:
-        mon = {n: (t, c) for n, t, c in err[("monarch", prec)]}
-        for n, t, c in err[("tuned", prec)]:
-            if n in mon and c and mon[n][1]:
-                print(f"  {prec} N={n}: total {t / mon[n][0]:.2f}x, compute {c / mon[n][1]:.2f}x")
+    for role in ("tuned", "accurate"):
+        print(f"\nError ratio cuFFTDx {role} / Monarch:")
+        for prec in plot.PRECS:
+            mon = {n: (t, c) for n, t, c in err[("monarch", prec)]}
+            for n, t, c in err[(role, prec)]:
+                if n in mon and c and mon[n][1]:
+                    print(f"  {prec} N={n}: total {t / mon[n][0]:.2f}x, compute {c / mon[n][1]:.2f}x")
 
     if a.figures:
         os.makedirs(a.figures, exist_ok=True)
@@ -152,15 +158,18 @@ def figures(sel, reps, later, err, out):
 
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
     for ax, prec in zip(axes, plot.PRECS):
-        for role, color, name in (("tuned", plot.COLOR["cufftdx"], "cuFFTDx tuned"),
-                                  ("monarch", plot.COLOR["monarch"], "Monarch")):
+        for role, color, mk, name, both in (("tuned", plot.COLOR["cufftdx"], "s", "cuFFTDx fastest", False),
+                                            ("accurate", plot.COLOR["cufftdx"], "o", "cuFFTDx most accurate", True),
+                                            ("monarch", plot.COLOR["monarch"], "o", "Monarch", True)):
             pts = err[(role, prec)]
             if not pts:
                 continue
             ns = [p[0] for p in pts]
-            ax.plot(ns, [p[1] for p in pts], color=color, marker="o", linewidth=2, label=f"{name}, total")
-            ax.plot(ns, [p[2] for p in pts], color=color, marker="^", linestyle=":", linewidth=2,
-                    label=f"{name}, compute only")
+            ax.plot(ns, [p[1] for p in pts], color=color, marker=mk, linestyle="--" if not both else "-",
+                    linewidth=2, label=f"{name}, total")
+            if both:
+                ax.plot(ns, [p[2] for p in pts], color=color, marker="^", linestyle=":", linewidth=2,
+                        label=f"{name}, compute only")
         plot.style(ax, "relative L2 error vs FP64" if prec == "fp16" else "", logy=True)
         plot.xticks(ax, sorted({p[0] for k in err if k[1] == prec for p in err[k]}))
         ax.set_title(prec, color=plot.INK, fontsize=11)
