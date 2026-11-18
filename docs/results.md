@@ -1,6 +1,7 @@
 # Results: Monarch FFT on cuBLASDx vs cuFFTDx, Tesla T4
 
-Every number below comes from the three sweep files of one Colab session (2026-11-18, commit a8f89ec):
+Every number below comes from the three sweep files of one Colab session (2026-11-18, commit a8f89ec; the records say `git_dirty: true`, so
+the working tree had uncommitted changes when they ran):
 
 - `results/tesla_t4/2026-11-18_sweep_3.jsonl` (repeat 1, used to select configurations);
 - `results/tesla_t4/2026-11-18_sweep_4.jsonl` and `_sweep_5.jsonl` (repeats 2 and 3, used for the ratios).
@@ -85,7 +86,7 @@ Batch 16384. GB/s columns are the mean of repeats 2-3. Configurations were chose
 | fp32 | 16384 | 205.5 | 205.5 (EPT 16, FPB 1) | - | - | 1.00 [1.00, 1.00] | - |
 
 Where "tuned" equals the default configuration, the ratio is exactly 1.00. Where the tuned/default range sits
-below 1 (fp32 8192, and partly fp16 4096 and fp32 4096), the configuration that won repeat 1 did not keep its lead
+below 1 (fp32 8192, and partly fp16 4096, fp32 2048 and fp32 4096), the configuration that won repeat 1 did not keep its lead
 in repeats 2-3. I report it as selected, per the protocol, rather than re-selecting.
 
 Every Monarch configuration (repeat 1, batch 16384):
@@ -243,7 +244,8 @@ Measured (the three sweep files above):
      161.5 GB/s) and roughly equal at 512 and 1024. The earlier "Monarch faster at N ≤ 512" result depended on
      the default configuration.
    - Tuning helps cuFFTDx fp16 most at small N: 1.46× at N = 256, 1.28× at 512 and 1024, with EPT 2. At
-     N ≥ 4096 the default is already as fast as anything in the grid.
+     N ≥ 4096 the gain is small: at fp16 4096 a grid config won repeat 1 (233.4 vs 229.1 GB/s) but over repeats 2-3
+     tuned/default is 0.99 [0.95, 1.03], a tie.
 2. **The fp16 accuracy advantage holds against every cuFFTDx configuration.**
    - Monarch's relative L2 error is 3.7-3.8e-4 at every N.
    - The most accurate cuFFTDx configuration anywhere in the grid has 2.1× (N = 256) to 3.0× (N = 4096) more
@@ -252,9 +254,11 @@ Measured (the three sweep files above):
      accurate configuration. So input quantization does not explain the gap; it narrows it.
 3. **fp32: Monarch is slower and less accurate.** It runs on FFMA at 0.14-0.36× of tuned cuFFTDx's throughput.
    Its error is 1.39-2.81e-7, against 1.04-1.59e-7 for the most accurate cuFFTDx configuration.
-4. **Repeat-to-repeat variation within the session is small for these kernels.** Most ratio ranges over repeats
-   2-3 are 0.00-0.03 wide. The widest are tuned/default at fp16 1024 (0.07), fp16 4096 (0.08) and fp32 4096
-   (0.09). Comparisons are made within a session only.
+4. **Repeat-to-repeat variation within the session is small for the ratios, not for absolute throughput.** Most
+   ratio ranges over repeats 2-3 are 0.00-0.03 wide. The widest are tuned/default at fp16 1024 (0.07), fp32 8192
+   (0.05), fp16 4096 (0.08) and fp32 4096 (0.09). Absolute throughput drifts down across the repeats at large N:
+   default cuFFTDx fp16 8192 goes 241.9, 226.5, 212.2 GB/s (−12 %), and fp16 16384 and fp32 8192 / 16384 drop
+   4-6 %. That is why I compare ratios within a repeat, and only within a session.
 5. **Factorization matters for Monarch.** fp16 N = 256: 16×16 runs at 195.7 GB/s, 8×32 at 132.0. The 8×32 GEMM 1
    is not on HMMA, and its kernel has 3944 static instructions vs 2264.
 
@@ -287,8 +291,9 @@ Interpretation:
   GEMM 1) that have no cuFFTDx counterpart. I did not write a custom cuFFTDx kernel.
 - **Profiling is partial.** Four fp16 kernels, from an earlier session, at the base clock that ncu imposes. The
   tuned cuFFTDx configurations, and all fp32 kernels, were not profiled. The grid binaries were not SASS-checked.
-- **Limited sizes.** N ≤ 4096 for Monarch, power-of-two two-factor splits only. fp32 2048 does not fit in shared
-  memory (72 KB).
+- **Limited sizes.** N ≤ 4096 for Monarch, power-of-two two-factor splits only. fp32 2048 is missing: with the
+  8 FFTs per 4096 elements I use everywhere (2 per block at N = 2048) it needs 72 KB of shared memory. One FFT per
+  block would need 56 KB and fit; I did not run that configuration.
 - **One input distribution.** Uniform inputs only.
 
 ## Prior work

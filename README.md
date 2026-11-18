@@ -30,8 +30,9 @@ interpretations are in [docs/results.md](docs/results.md).
   cuFFTDx fp16 1.46× faster at N = 256.
 - **fp32:** the T4 has no fp32 tensor cores, so Monarch's GEMMs run on FFMA. It reaches 0.14-0.36× of tuned
   cuFFTDx's throughput, with 1.3-1.8× its best error.
-- **Tensor cores, in SASS and ncu:** every fp16 Monarch kernel contains HMMA, and the tensor pipe is active
-  19-33 % at runtime. The fp32 Monarch kernels and the cuFFTDx kernels contain none.
+- **Tensor cores, in SASS and ncu:** every fp16 Monarch kernel contains HMMA. In the two fp16 Monarch kernels I
+  profiled (earlier session), the tensor pipe is active 19-33 % at runtime. The fp32 Monarch kernels and the
+  default cuFFTDx kernels contain none; the grid (tuned) cuFFTDx binaries were not SASS-checked.
 - **Why Monarch slows down at large N (Nsight Compute, fp16 64×64, earlier session):** it is not memory-bound
   (47 % of peak memory throughput vs 85 % for cuFFTDx). It executes 2.8× the instructions and about 4.5× the
   shared-memory wavefronts, with heavy bank conflicts.
@@ -90,8 +91,8 @@ The Python reference and its tests run without a GPU:
   plus structural choices I made by hand (persistent grid, shared F table, transposed GEMM 1).
 - **Partial profiling.** Four fp16 kernels from an earlier session were profiled; the tuned cuFFTDx
   configurations were not.
-- **Limited sizes.** Monarch covers N ≤ 4096 with power-of-two two-factor splits. fp32 N = 2048 does not fit in
-  shared memory.
+- **Limited sizes.** Monarch covers N ≤ 4096 with power-of-two two-factor splits. fp32 N = 2048 is missing: at
+  2 FFTs per block it needs 72 KB of shared memory; 1 FFT per block would fit, and I did not run it.
 - **Agent eval is one small model, one run per cell.** 8 held-out tasks (h09 and h10 were not written), Qwen3 8B
   at temperature 0, which solved none in any condition. Condition C also gets a longer prompt (more tool
   descriptions). The dev task d3 does not enforce fp16 inside the kernel.

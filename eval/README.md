@@ -10,8 +10,11 @@ same prompt, the same token budget and the same iteration budget:
 | B, + official docs | A + `search_docs` / `read_doc` over the installed MathDx package: docs, headers, examples |
 | C, + docs + MCP | B + `run_public_test`, `sass_check`, `diagnose` (the checks of `mcp/server.py`, pointed at the task) |
 
-Status: done. The 5 dev tasks and the 8 held-out tasks pass with their reference solutions on the T4; the harness
-checks every held-out reference before the first agent run. h09 and h10 were not written and are dropped from all
+Status: done. The 5 dev tasks pass with their reference solutions on the T4
+(`results/tesla_t4/2026-11-18_eval_reference.jsonl`). The harness checks every held-out reference before the first
+agent run and gives no agent run to a task whose reference fails. The held-out validation output of the final
+session was not saved; the evidence that all 8 references passed is that every held-out record has agent runs
+and a reference time (`ref_ms`). h09 and h10 were not written and are dropped from all
 three conditions. The held-out run is below.
 
 Run (Colab T4, after `ollama serve` and `ollama pull qwen3:8b`):
@@ -69,20 +72,21 @@ are run once per condition at the end, with no prompt or harness change after th
 
 - **compiles:** the final solution builds.
 - **correct:** the hidden test passes, i.e. rel L2 against an FP64 reference under the spec's tolerance on
-  every hidden size and seed (including the timed batch, 2^14), plus HMMA in the binary where required.
+  every hidden size and seed (the largest checked case is the timed size: 2^14, 2^20 for h03, 128 matrices for
+  h01), plus HMMA in the binary where required. The timed launch itself is not checked.
 - **library_used:** solution.cu includes the required MathDx header(s) and calls no host cuFFT/cuBLAS.
   **solved** = correct and library_used; this is the headline count.
-- **api_misuse:** count of compiler errors that name a MathDx symbol, plus the hidden-test check for the
-  traps in meta.json (e.g. a "tensor cores required" task whose kernel has no MMA).
+- **api_misuse:** number of distinct compiler messages that name a MathDx symbol or header, plus 1 when a
+  "tensor cores required" task has no MMA. The other traps listed in meta.json are not checked automatically.
 - **iterations:** model turns until the agent submits or the budget ends.
-- **wall time** and **tokens:** input, output, cached.
-- **perf vs reference:** median time of the hidden test's timing launch, divided by the reference
-  solution's time in the same session.
+- **wall time** and **tokens:** input and output.
+- **perf vs reference:** reference solution's median time divided by the agent solution's, both from the hidden
+  test's timing launch in the same session (> 1 means the agent's code is faster).
 
 ## Reporting
 
-Per-task tables only, plus counts ("C solved 7 of 10, B 5 of 10"). With 10 held-out tasks and one run
-per cell, I make no significance claims. A difference of one or two tasks is within what a different
+Per-task tables only, plus counts per condition (written before the run; the result is below). With 8 held-out
+tasks and one run per cell, I make no significance claims. A difference of one or two tasks is within what a different
 seed or prompt wording could flip, and the write-up says so.
 
 ## Held-out results (Tesla T4, 2026-11-18, commit c5b6099)
@@ -106,12 +110,18 @@ Solved: A 0 of 8, B 0 of 8, C 0 of 8. This is a floor effect. It says this model
 write MathDx code in any condition. It says nothing about whether docs or the MCP loop help a model that can.
 
 What the transcripts do show:
-- **The model does not know the library exists in its real form.** Final build errors include invented headers
-  (`cuda_mathdx.h`, `cudaFFTdx.h`, `cublasDx.h`) and invented host-style functions (`cublasDxCreate`,
-  `cufftDxExec`, `cublasDxGemmBatched`). cuFFTDx and cuBLASDx are header-only C++ templates with no handles. With
-  docs (B, C) it calls `search_docs` and `read_doc` but still writes the invented API.
-- **In A, four of eight runs wrote no solution.** The first turn used the whole 4096-token output budget without a
-  tool call, and the model then called `submit`.
+- **The model does not know the library in its real form.** Several final builds fail on an invented header:
+  `cuda_mathdx.h` (h01 in all three conditions, h02 A and B), `cudaFFTdx.h` (h03 B), `cublasDx.h` (h05 B). In h04 and h06-h08 under B
+  and C, it includes the real `cufftdx.hpp` / `cublasdx.hpp` and then calls invented host-style functions
+  (`cublasDxCreate`, `cufftDxExec`, `cublasDxGemmBatched`). cuFFTDx and cuBLASDx are header-only C++ templates
+  with no handles. Doc use was thin: h05 made no doc calls under B or C, `read_doc` was used only in h06-h08,
+  and many searches returned nothing.
+- **The C loop was barely used.** Across the 8 C runs, `run_public_test` was called once (h03), and `sass_check`
+  and `diagnose` never.
+- **In A, four of eight runs wrote no solution (h04-h07).** The first turn used the whole 4096-token output budget
+  and returned no tool call; after the harness's nudge ("Use a tool. Call submit when solution.cu is final.") the
+  model called `submit`, which the harness accepts with no solution. The transcript does not keep what those 4096
+  tokens were.
 - **The one correct answer used the wrong library.** In h03, C, the model ran the public test, then submitted a
   host cuFFT solution that passes the hidden test. `library_used` catches it, so it is counted as not solved. This
   is the case the separate `solved` field exists for.
@@ -127,3 +137,12 @@ smoke test shows `diagnose` reporting that failure in one call.
 - The HMMA check reads the whole binary, so a dead kernel containing HMMA would pass it (seen in d4 during
   development). d3 does not enforce that the FFT runs in fp16.
 - h09 and h10 (FFT and GEMM fused) were not written.
+- The hidden tests do not enforce every spec requirement: h04's fp16 computation (an fp32 FFT passes at 1e-2),
+  block-level execution, and h03's one-FFT-per-thread structure (host cuFFT passes h03's test; only
+  `library_used` rejects it).
+- Grading trusts the solution process. The solution runs in the same process as the test, so a `solve()` that
+  writes a passing result file and exits would pass; `-I eval/common` would also let a solution include a hidden
+  reference by relative path. No run did either (checked in the transcripts), and h03 C's pass is genuine.
+- In C, when a public build fails inside `test.cu`, the error context shows a few lines of the test source.
+- `host_library_calls` also lists invented names such as `cublasDxCreate`, since the pattern matches any
+  `cublas*` / `cufft*` call. `solved` does not depend on it.

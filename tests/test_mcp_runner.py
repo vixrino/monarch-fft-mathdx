@@ -111,7 +111,7 @@ def test_sass_parser():
 
 
 def test_mcp_session_in_process(monkeypatch):
-    mcp = pytest.importorskip("mcp")
+    mcp = pytest.importorskip("mcp.client")  # the repo's mcp/ folder imports as a namespace package
     from mcp.client import Client
 
     monkeypatch.setenv("DXB_REPO", REPO)
