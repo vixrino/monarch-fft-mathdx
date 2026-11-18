@@ -136,17 +136,18 @@ def main():
 def figures(sel, reps, later, err, out):
     fig, axes = plt.subplots(1, 2, figsize=(10, 4.4), sharey=True)
     for ax, prec in zip(axes, plot.PRECS):
-        for role, color, ls, mk, name in (("default", plot.COLOR["cufftdx"], "--", "s", "cuFFTDx default"),
-                                         ("tuned", plot.COLOR["cufftdx"], "-", "o", "cuFFTDx tuned"),
-                                         ("monarch", plot.COLOR["monarch"], "-", "o", "Monarch")):
+        # default in a light tint with hollow squares: same hue and line style alone did not separate it from tuned
+        for role, color, ls, mk, face, name in (("default", "#8fb9ea", "--", "s", "white", "cuFFTDx default"),
+                                               ("tuned", plot.COLOR["cufftdx"], "-", "o", None, "cuFFTDx tuned"),
+                                               ("monarch", plot.COLOR["monarch"], "-", "o", None, "Monarch")):
             ns = sorted(n for (r, p, n) in sel if r == role and p == prec)
             ys, lo, hi = [], [], []
             for n in ns:
                 v = [rep.get(sel[(role, prec, n)]) for rep in later]
                 m, l, h = stats([x["gbps_eff"] for x in v if x]) if all(v) else (float("nan"),) * 3
                 ys.append(m), lo.append(m - l), hi.append(h - m)
-            ax.errorbar(ns, ys, yerr=[lo, hi], color=color, linestyle=ls, marker=mk, markersize=5, linewidth=2,
-                        capsize=3, label=name)
+            ax.errorbar(ns, ys, yerr=[lo, hi], color=color, linestyle=ls, marker=mk, markersize=7, linewidth=2,
+                        markerfacecolor=face or color, markeredgewidth=1.5, capsize=3, label=name)
         plot.style(ax, "effective GB/s, batch 2^14" if prec == "fp16" else "")
         plot.xticks(ax, sorted({n for (_, p, n) in sel if p == prec}))
         ax.set_title(prec, color=plot.INK, fontsize=11)
