@@ -6,6 +6,7 @@
 // Copyright NVIDIA Corporation, Apache-2.0. Differences: out-of-place, natural (RIRI) global
 // layout for fp16, and my own harness for timing and accuracy.
 #include <type_traits>
+#include <utility>
 
 #include <cufftdx.hpp>
 
@@ -13,12 +14,13 @@
 
 using namespace cufftdx;
 
-template <class T, unsigned N>
+// EPT = FPB = 0: the library's suggestion (the default baseline); otherwise one point of the tuning grid
+template <class T, unsigned N, unsigned EPT = 0, unsigned FPB = 0>
 struct cfg {
   using base = decltype(Block() + Size<N>() + Type<fft_type::c2c>() + Direction<fft_direction::forward>() +
                         Precision<T>() + SM<DXB_SM>());
-  using fft = decltype(base() + ElementsPerThread<base::elements_per_thread>() +
-                       FFTsPerBlock<base::suggested_ffts_per_block>());
+  using fft = decltype(base() + ElementsPerThread<EPT ? EPT : base::elements_per_thread>() +
+                       FFTsPerBlock<FPB ? FPB : base::suggested_ffts_per_block>());
   using io = std::conditional_t<std::is_same_v<T, __half>, __half2, float2>;
 };
 
@@ -75,10 +77,11 @@ __launch_bounds__(FFT::max_threads_per_block) __global__ void block_fft(const IO
   }
 }
 
-template <class T, unsigned N>
+template <class T, unsigned N, unsigned EPT = 0, unsigned FPB = 0>
 bool run(const args& a, FILE* f, const std::string& prov) {
-  using FFT = typename cfg<T, N>::fft;
-  using IO = typename cfg<T, N>::io;
+  using FFT = typename cfg<T, N, EPT, FPB>::fft;
+  using IO = typename cfg<T, N, EPT, FPB>::io;
+  constexpr bool grid = EPT != 0;
   constexpr bool fp16 = std::is_same_v<T, __half>;
   constexpr unsigned fpb = FFT::ffts_per_block;
   static_assert(!FFT::requires_workspace, "power-of-two sizes should not need a Bluestein workspace");
@@ -95,16 +98,20 @@ bool run(const args& a, FILE* f, const std::string& prov) {
 
   char c[512], label[128];
   std::snprintf(c, sizeof c,
-                "\"impl\":\"cufftdx\",\"cufftdx\":\"%d.%d.%d\",\"precision\":\"%s\",\"n\":%u,\"ept\":%u,"
+                "\"impl\":\"cufftdx\",\"variant\":\"%s\",\"cufftdx\":\"%d.%d.%d\",\"precision\":\"%s\",\"n\":%u,\"ept\":%u,"
                 "\"ffts_per_block\":%u,\"block_dim\":[%u,%u,%u],\"smem_bytes\":%u,\"blocks_per_sm\":%d",
-                CUFFTDX_VERSION_MAJOR, CUFFTDX_VERSION_MINOR, CUFFTDX_VERSION_PATCH, fp16 ? "fp16" : "fp32", N,
+                grid ? "grid" : "default", CUFFTDX_VERSION_MAJOR, CUFFTDX_VERSION_MINOR, CUFFTDX_VERSION_PATCH,
+                fp16 ? "fp16" : "fp32", N,
                 FFT::elements_per_thread, fpb, FFT::block_dim.x, FFT::block_dim.y, FFT::block_dim.z,
                 FFT::shared_memory_size, occ);
-  std::snprintf(label, sizeof label, "cufftdx %s N=%5u ept=%2u fpb=%3u smem=%6u", fp16 ? "fp16" : "fp32", N,
-                FFT::elements_per_thread, fpb, FFT::shared_memory_size);
+  std::snprintf(label, sizeof label, "cufftdx%s %s N=%5u ept=%2u fpb=%3u smem=%6u", grid ? "-grid" : "",
+                fp16 ? "fp16" : "fp32", N, FFT::elements_per_thread, fpb, FFT::shared_memory_size);
   // loose sanity bounds; fp16 includes rounding the input itself (see docs/decisions.md)
   char key[64];
-  std::snprintf(key, sizeof key, "cufftdx:%s:%u", fp16 ? "fp16" : "fp32", N);
+  if (grid)
+    std::snprintf(key, sizeof key, "cufftdx:%s:%u:e%u:f%u", fp16 ? "fp16" : "fp32", N, EPT, FPB);
+  else
+    std::snprintf(key, sizeof key, "cufftdx:%s:%u", fp16 ? "fp16" : "fp32", N);
   bench b{"cufftdx_block_fft", c, N, fpb, fp16 ? 1e-2 : 1e-5, label, key};
   if (a.only && std::strcmp(a.only, key) != 0) return true;  // --only also silences skipped configs
   if (!fits) {
@@ -123,6 +130,45 @@ bool sweep(const args& a, FILE* f, const std::string& prov) {
   return (run<T, Ns>(a, f, prov) & ...);
 }
 
+#ifdef DXB_GRID_N
+// Tuning grid for one N: every ElementsPerThread the sm_75 database lists for this size
+// (include/cufftdx/database/records/750/database_{fp16,fp32}_fwd.json, the same lists for both precisions)
+// times FFTsPerBlock in {1..32}, keeping what the library's own static_asserts allow: EPT divides N, at most
+// 1024 threads, and an even FPB for fp16 (implicit batching). Shared memory is checked at run time.
+template <class T, unsigned N, unsigned EPT, unsigned FPB>
+constexpr bool legal() {
+  constexpr bool fp16 = std::is_same_v<T, __half>;
+  return N % EPT == 0 && (!fp16 || FPB % 2 == 0) && (N / EPT) * (fp16 ? FPB / 2 : FPB) <= 1024;
+}
+
+template <class T, unsigned N, unsigned EPT, unsigned FPB>
+bool run_if_legal(const args& a, FILE* f, const std::string& prov) {
+  if constexpr (legal<T, N, EPT, FPB>())
+    return run<T, N, EPT, FPB>(a, f, prov);
+  else
+    return true;
+}
+
+template <class T, unsigned N, unsigned EPT, unsigned... Log2FPB>
+bool grid_fpb(const args& a, FILE* f, const std::string& prov, std::integer_sequence<unsigned, Log2FPB...>) {
+  return (run_if_legal<T, N, EPT, (1u << Log2FPB)>(a, f, prov) & ...);
+}
+
+template <class T, unsigned N, unsigned... EPTs>
+bool grid(const args& a, FILE* f, const std::string& prov) {
+  return (grid_fpb<T, N, EPTs>(a, f, prov, std::make_integer_sequence<unsigned, 6>{}) & ...);
+}
+
+template <class T>
+bool grid_n(const args& a, FILE* f, const std::string& prov) {
+  constexpr unsigned n = DXB_GRID_N;
+  if constexpr (n <= 2048) return grid<T, n, 2, 4, 8, 16, 32>(a, f, prov);
+  else if constexpr (n == 4096) return grid<T, n, 4, 8, 16, 32>(a, f, prov);
+  else if constexpr (n == 8192) return grid<T, n, 8, 16, 32>(a, f, prov);
+  else return grid<T, n, 16, 32>(a, f, prov);
+}
+#endif
+
 int main(int argc, char** argv) {
   args a;
   if (!parse_args(argc, argv, a)) return 2;
@@ -132,8 +178,13 @@ int main(int argc, char** argv) {
     return 2;
   }
   const std::string prov = provenance(argc, argv);
+#ifdef DXB_GRID_N
+  bool ok = grid_n<float>(a, f, prov);
+  ok &= grid_n<__half>(a, f, prov);
+#else
   bool ok = sweep<float, 256, 512, 1024, 2048, 4096, 8192, 16384>(a, f, prov);
   ok &= sweep<__half, 256, 512, 1024, 2048, 4096, 8192, 16384>(a, f, prov);
+#endif
   if (a.out) std::fclose(f);
   std::fprintf(stderr, ok ? "all accuracy checks passed\n" : "ACCURACY CHECK FAILED\n");
   return ok ? 0 : 1;

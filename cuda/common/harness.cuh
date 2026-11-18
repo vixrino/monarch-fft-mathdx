@@ -260,26 +260,35 @@ bool measure(FILE* f, const bench& b, const args& a, const std::string& prov, La
     return true;
   }
   const size_t ab = round_up(acc_ffts, b.group);
-  dbuf<double2> x64(ab * b.n), r64(ab * b.n);
+  // two references: from the exact fp64 input (total error) and from the input as rounded to IO (compute
+  // error, without the input quantization that no FFT of IO data can undo)
+  dbuf<double2> x64(ab * b.n), r64(ab * b.n), xq(ab * b.n), rq(ab * b.n);
   dbuf<IO> x(ab * b.n), y(ab * b.n);
-  std::vector<double> rel(acc_seeds), mx(acc_seeds);
+  std::vector<double> rel(acc_seeds), mx(acc_seeds), relq(acc_seeds), mxq(acc_seeds);
   struct { size_t i; double2 got, ref; } first{};
   for (int s = 0; s < acc_seeds; ++s) {
     fill_random(x64, s);
     fill_random(x, s);
     fft_ref_fp64(x64, r64, int(b.n));
+    k_widen<<<1024, 256>>>(x.p, xq.p, x.n);
+    CUDA_CHECK(cudaGetLastError());
+    fft_ref_fp64(xq, rq, int(b.n));
     launch(x, y);
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
     const auto yh = to_host_fp64(y), rh = to_host_fp64(r64);
-    err e = compare(yh, rh);
+    err e = compare(yh, rh), eq = compare(yh, to_host_fp64(rq));
     rel[s] = e.rel_l2;
     mx[s] = e.max_abs;
+    relq[s] = eq.rel_l2;
+    mxq[s] = eq.max_abs;
     if (s == 0) first = {e.worst, yh[e.worst], rh[e.worst]};
   }
   const double rel_med = quantile(rel, 0.5), mx_med = quantile(mx, 0.5);
   const bool pass = rel_med < b.tol;
-  std::fprintf(stderr, "%s  rel_l2=%.3e max_abs=%.3e  %s\n", b.label.c_str(), rel_med, mx_med, pass ? "ok" : "FAIL");
+  const double relq_med = quantile(relq, 0.5), mxq_med = quantile(mxq, 0.5);
+  std::fprintf(stderr, "%s  rel_l2=%.3e max_abs=%.3e compute_rel_l2=%.3e  %s\n", b.label.c_str(), rel_med, mx_med,
+               relq_med, pass ? "ok" : "FAIL");
   // one machine-readable line per failing configuration, parsed by mcp/runner.py
   if (!pass)
     std::fprintf(stderr, "MISMATCH key=%s seed=0 fft=%zu k=%zu got=(%.6e,%.6e) ref=(%.6e,%.6e) rel_l2=%.3e tol=%.1e\n",
@@ -287,11 +296,11 @@ bool measure(FILE* f, const bench& b, const args& a, const std::string& prov, La
                  rel[0], b.tol);
   if (a.check) return pass;
 
-  char acc[256];
+  char acc[384];
   std::snprintf(acc, sizeof acc,
-                "\"rel_l2_median\":%.6e,\"max_abs_median\":%.6e,\"acc_seeds\":%d,\"acc_batch\":%zu,"
-                "\"acc_tol\":%.1e,\"acc_pass\":%s",
-                rel_med, mx_med, acc_seeds, ab, b.tol, pass ? "true" : "false");
+                "\"rel_l2_median\":%.6e,\"max_abs_median\":%.6e,\"rel_l2_compute_median\":%.6e,"
+                "\"max_abs_compute_median\":%.6e,\"acc_seeds\":%d,\"acc_batch\":%zu,\"acc_tol\":%.1e,\"acc_pass\":%s",
+                rel_med, mx_med, relq_med, mxq_med, acc_seeds, ab, b.tol, pass ? "true" : "false");
   for (size_t batch : {b.group, round_up(big_batch, b.group)}) {
     dbuf<IO> xb(batch * b.n), yb(batch * b.n);
     fill_random(xb, 0);

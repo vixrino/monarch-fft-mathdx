@@ -2,6 +2,7 @@
 # One sweep = both binaries + SASS counts in one GPU session, written to one new
 # results/<gpu>/<date>_sweep[_k].jsonl. Each binary already covers every N, factorization and
 # precision it supports, at two batch sizes (one block's group for latency, ~2^14 for throughput).
+# --grid adds the cuFFTDx tuning grid (build target cufftdx_grid); --repeat R writes R sweep files in a row.
 import argparse
 import datetime
 import json
@@ -11,6 +12,7 @@ import subprocess
 import sys
 
 BINARIES = ["cufftdx_block_fft", "monarch_fft"]
+GRID = [f"cufftdx_grid_{n}" for n in (256, 512, 1024, 2048, 4096, 8192, 16384)]
 
 
 def sh(*cmd):
@@ -50,16 +52,12 @@ def sass_records(binary, prov):
         yield {**r, **prov}
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--build", default="build")
-    ap.add_argument("--results", default="results")
-    a = ap.parse_args()
-
+def one_sweep(a, rep):
     path = new_path(a.results)
     print("writing", path, flush=True)
     ok = True
-    for b in BINARIES:
+    bins = BINARIES + [g for g in GRID if os.path.exists(os.path.join(a.build, g))] * a.grid
+    for b in bins:
         r = subprocess.run([os.path.join(a.build, b), "--out", path])
         ok &= r.returncode == 0
         print(f"{b}: exit {r.returncode}", flush=True)
@@ -68,7 +66,7 @@ def main():
             "git_dirty": bool(sh("git", "status", "--porcelain", "--untracked-files=no")),
             "cuobjdump": sh("cuobjdump", "--version").splitlines()[-1],
             "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "cmd": " ".join(sys.argv)}
+            "cmd": " ".join(sys.argv), "repeat": rep, "repeats": a.repeat}
     with open(path, "a") as f:
         for b in BINARIES:
             for r in sass_records(os.path.join(a.build, b), prov):
@@ -77,6 +75,19 @@ def main():
                       f"{str(r.get('n1', '')) + 'x' + str(r.get('n2', '')) if 'n1' in r else '':7s} "
                       f"mma={r['mma']:4d} total={r['sass_total']:6d}")
     print(path)
+    return ok
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--build", default="build")
+    ap.add_argument("--results", default="results")
+    ap.add_argument("--grid", action="store_true")
+    ap.add_argument("--repeat", type=int, default=1)
+    a = ap.parse_args()
+    ok = True
+    for rep in range(a.repeat):
+        ok &= one_sweep(a, rep)
     sys.exit(0 if ok else 1)
 
 

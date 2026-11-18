@@ -61,6 +61,22 @@ target_compile_definitions(cufftdx_block_fft PRIVATE
   DXB_MATHDX_VERSION="${mathdx_VERSION}")
 target_link_libraries(cufftdx_block_fft PRIVATE mathdx::cufftdx CUDA::cufft CUDA::nvml)
 
+# cuFFTDx tuning grid, one binary per N so the ~200 instantiations build in parallel; see docs/decisions.md
+foreach(n 256 512 1024 2048 4096 8192 16384)
+  add_executable(cufftdx_grid_${n} cuda/cufftdx/block_fft.cu)
+  target_include_directories(cufftdx_grid_${n} PRIVATE cuda/common)
+  target_compile_definitions(cufftdx_grid_${n} PRIVATE
+    DXB_GRID_N=${n}
+    DXB_SM=${CUDA_ARCH}0
+    DXB_GIT_COMMIT="${git_commit}"
+    DXB_GIT_DIRTY=${git_dirty}
+    DXB_MATHDX_VERSION="${mathdx_VERSION}")
+  target_link_libraries(cufftdx_grid_${n} PRIVATE mathdx::cufftdx CUDA::cufft CUDA::nvml)
+  set_target_properties(cufftdx_grid_${n} PROPERTIES EXCLUDE_FROM_ALL ON)
+  list(APPEND grid_targets cufftdx_grid_${n})
+endforeach()
+add_custom_target(cufftdx_grid DEPENDS ${grid_targets})
+
 add_executable(monarch_fft cuda/monarch/monarch_fft.cu)
 target_include_directories(monarch_fft PRIVATE cuda/common)
 target_compile_definitions(monarch_fft PRIVATE

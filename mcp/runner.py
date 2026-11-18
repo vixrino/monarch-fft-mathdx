@@ -141,7 +141,7 @@ def compiler_errors(text, limit=20):
     return errs
 
 
-CHECK_LINE = re.compile(r"^(?P<label>(monarch|cufftdx) .*?)\s+rel_l2=(?P<rel>\S+) max_abs=(?P<mx>\S+)\s+(?P<status>ok|FAIL)$")
+CHECK_LINE = re.compile(r"^(?P<label>(monarch|cufftdx) .*?)\s+rel_l2=(?P<rel>\S+) max_abs=(?P<mx>\S+)(?:\s+compute_rel_l2=\S+)?\s+(?P<status>ok|FAIL)$")
 SKIP_LINE = re.compile(r"^(?P<label>(monarch|cufftdx) .*?)\s+skipped: (?P<reason>.*)$")
 MISMATCH = re.compile(r"^MISMATCH key=(?P<key>\S+) seed=(?P<seed>\d+) fft=(?P<fft>\d+) k=(?P<k>\d+) "
                       r"got=\((?P<gr>\S+),(?P<gi>\S+)\) ref=\((?P<rr>\S+),(?P<ri>\S+)\) "

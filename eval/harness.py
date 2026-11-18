@@ -337,10 +337,11 @@ def out_path(d, name):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tasks", nargs="*")
+    ap.add_argument("--split", default="dev", choices=["dev", "heldout"])
     ap.add_argument("--conditions", nargs="*", default=["A", "B", "C"], choices=list(CONDITIONS))
     ap.add_argument("--model", default="qwen3:8b")
     a = ap.parse_args()
-    ids = a.tasks or sorted(os.path.basename(d) for d in os.listdir(os.path.join(EVAL, "tasks")) if d.startswith("d"))
+    ids = a.tasks or sorted(d for d in os.listdir(os.path.join(EVAL, "tasks")) if d.startswith(a.split[0]))
     gpu = validate.provenance()["gpu"].strip().lower().replace(" ", "_")
     d = os.path.join(ROOT, "results", gpu)
     os.makedirs(d, exist_ok=True)
@@ -362,6 +363,11 @@ def main():
             ref = validate.validate(task_dir, tmp)
             ref_ms = ref.get("hidden", {}).get("time_ms") if ref["valid"] else None
             print(f"{t}: reference valid={ref['valid']} time_ms={ref_ms}", flush=True)
+            if not ref["valid"]:  # a task whose own reference fails its test grades nothing; record and move on
+                fr.write(json.dumps({"task": t, "split": meta["split"], "status": "skipped_invalid_reference",
+                                     "reference": ref, **prov}) + "\n")
+                print(json.dumps(ref)[:2000], flush=True)
+                continue
             for c in a.conditions:
                 rec, msgs = agent(client, a.model, c, task_dir, meta, corpus, tmp)
                 ms = (rec.get("hidden") or {}).get("time_ms")
