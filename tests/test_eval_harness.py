@@ -59,6 +59,14 @@ def test_tools_before_write(run):
     assert run.compile()["ok"] is False
     assert run.grade() == {"compiles": False, "correct": False, "hidden": None}
     assert run.write_solution("int x;")["ok"] and os.path.exists(run.sol)
+    r = run.write_solution("```cpp\n#include <cufftdx.hpp>\nint x;\n```")
+    assert r["stripped_markdown_fence"] and open(run.sol).read() == "#include <cufftdx.hpp>\nint x;"
+    assert not run.write_solution("int y; // ```")["stripped_markdown_fence"]
+
+
+def test_misuse_pattern_ignores_case():
+    assert harness.MATHDX.search("cufftDx.h: No such file or directory")
+    assert harness.MATHDX.search("cuda_mathdx.h: No such file or directory")
 
 
 def test_conditions_nest():

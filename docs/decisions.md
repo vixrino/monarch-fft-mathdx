@@ -743,3 +743,22 @@ output tokens at 40 tok/s), num_ctx 32768, 4096 output tokens per turn, 16 turns
 - **Tokens:** as ollama reports them (prompt_eval_count, eval_count), summed over turns. With ollama's
   prompt cache these may count only re-evaluated tokens; the probe's second call reported 220 prompt tokens
   for a ~220-token context, so it looked like full counts there. Not checked on long runs.
+
+### Dev run 1 (2026-11-18, d1 only, qwen3:8b): what it changed in the harness
+Data: `results/tesla_t4/2026-11-18_eval_runs.jsonl` and `..._eval_transcripts.jsonl`.
+- **Outcome.** All three conditions ended with a build error on the first include line, a header that does
+  not exist: A `cufftDx.h`, B `cuda_mathdx.h`, C `MathDx/cuda_mathdx.h`.
+  - B and C searched for the invented name (0 hits) and kept it.
+  - C never called run_public_test or diagnose.
+  - Wall time was 231 s (A, including the model load), 101 s (B) and 87 s (C).
+- **Harness bug 1, code fences.** Every write_solution call wrapped the file in a markdown fence ```` ```cpp ````.
+  nvcc stopped at the missing header before reaching it, but a correct solution would have failed on line 1.
+  write_solution now strips one surrounding fence, in every condition, and says so in its result. It is a
+  chat-format slip, not MathDx knowledge.
+- **Harness bug 2, case-sensitive misuse count.** The api_misuse regex was case-sensitive and did not include
+  "mathdx", so all three runs reported misuse=0 although every build error was an invented MathDx header.
+  It is now case-insensitive and includes mathdx.
+- **Spec unchanged on purpose.** I did not add the header name (`cufftdx.hpp`) to the specs. Knowing it is
+  part of what the eval measures, and B/C can find it with one search.
+- **Note on the corpus.** The Colab package has 855 corpus files against 490 in my local copy: it also ships
+  docs for other Dx libraries (cuRANDDx seen in C's search hits). The corpus is still "the installed package".

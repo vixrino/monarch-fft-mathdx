@@ -35,7 +35,8 @@ CTX_STOP = 24000  # prompt tokens; leaves room for one more reply (NUM_PREDICT) 
 NUM_PREDICT = 4096
 MAX_TOOL_CHARS = 6000
 OPTS = {"temperature": 0, "seed": 0, "num_ctx": NUM_CTX, "num_predict": NUM_PREDICT}
-MATHDX = re.compile(r"cufftdx|cublasdx|commondx")
+MATHDX = re.compile(r"cufftdx|cublasdx|commondx|mathdx", re.I)
+FENCE = re.compile(r"^\s*```[\w+-]*\n(.*?)\n?```\s*$", re.S)
 
 SYSTEM = f"""You write CUDA C++ for an NVIDIA Tesla T4 (sm_75) with NVIDIA MathDx 26.10 (cuFFTDx 1.8.0, \
 cuBLASDx 0.8.0), already installed on the include paths of the build command in the spec.
@@ -171,8 +172,10 @@ class Run:
         return rc == 0, errs, (so + se)[-1500:]
 
     def write_solution(self, code):
-        open(self.sol, "w").write(code)
-        return {"ok": True, "bytes": len(code)}
+        # a markdown fence around the file is a chat-format slip, not a MathDx error: strip it in every condition
+        m = FENCE.match(code)
+        open(self.sol, "w").write(m[1] if m else code)
+        return {"ok": True, "bytes": len(m[1] if m else code), "stripped_markdown_fence": bool(m)}
 
     def compile(self):
         if not os.path.exists(self.sol):
