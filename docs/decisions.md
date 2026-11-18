@@ -865,3 +865,13 @@ which no fp16 FFT can undo.
 `plot.py` drops `variant == "grid"` rows, so its per-configuration, latency and SASS tables stay about the
 library's default cuFFTDx and the binaries that were SASS-checked. Without this, its "best cuFFTDx" would
 silently become a grid row with no SASS record.
+
+## Held-out agent run (2026-11-18, commit c5b6099)
+
+- **What.** h01-h08 × A, B, C, one run each, qwen3:8b, on a second Colab account after the first ran out of GPU
+  quota. Ran as four harness calls of two tasks each so a lost runtime would only lose one chunk. Files
+  `results/tesla_t4/2026-11-18_eval_runs_{2..5}.jsonl`, copied unchanged.
+- **Result.** 0 of 8 solved in every condition. I report it as a floor effect and do not read B − A or C − B from
+  it. The reference-validation file of this session was not downloaded; every task got agent runs, which the
+  harness only starts for a valid reference.
+- **Not changed after the run.** No prompt, budget or task edit, as fixed in the protocol.

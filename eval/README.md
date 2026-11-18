@@ -10,10 +10,9 @@ same prompt, the same token budget and the same iteration budget:
 | B, + official docs | A + `search_docs` / `read_doc` over the installed MathDx package: docs, headers, examples |
 | C, + docs + MCP | B + `run_public_test`, `sass_check`, `diagnose` (the checks of `mcp/server.py`, pointed at the task) |
 
-Status: the 5 dev tasks pass with the reference solutions on the T4
-(`results/tesla_t4/2026-11-17_eval_reference.jsonl`). `eval/harness.py` is written and unit-tested off GPU,
-run once on d1 (dev run 1). Held-out tasks h01–h08 are written; h09 and h10 were not written and are
-dropped from all three conditions.
+Status: done. The 5 dev tasks and the 8 held-out tasks pass with their reference solutions on the T4; the harness
+checks every held-out reference before the first agent run. h09 and h10 were not written and are dropped from all
+three conditions. The held-out run is below.
 
 Run (Colab T4, after `ollama serve` and `ollama pull qwen3:8b`):
 `python3 eval/harness.py --tasks d1_ifft_scaled --conditions A B C`. One record per run goes to
@@ -85,3 +84,46 @@ are run once per condition at the end, with no prompt or harness change after th
 Per-task tables only, plus counts ("C solved 7 of 10, B 5 of 10"). With 10 held-out tasks and one run
 per cell, I make no significance claims. A difference of one or two tasks is within what a different
 seed or prompt wording could flip, and the write-up says so.
+
+## Held-out results (Tesla T4, 2026-11-18, commit c5b6099)
+
+One run per task and condition, `qwen3:8b` (digest `500a1f06...`), temperature 0, 16 turns, 4096 output tokens
+per turn. Records: `results/tesla_t4/2026-11-18_eval_runs_{2,3,4,5}.jsonl`, conversations in the matching
+`_eval_transcripts_` files. Each cell: final state; turns used, builds, api_misuse.
+
+| task | library | A | B | C |
+|---|---|---|---|---|
+| h01_fft_columns | cuFFTDx | build error; 4, 0, 1 | build error; 16, 1, 1 | build error; 16, 1, 1 |
+| h02_circ_xcorr | cuFFTDx | build error; 8, 3, 1 | build error; 16, 3, 1 | build error; 16, 6, 1 |
+| h03_thread_fft16 | cuFFTDx | build error; 16, 8, 1 | build error; 16, 6, 1 | correct, host cuFFT, not solved; 7, 3, 1 |
+| h04_ifft_fp16_natural | cuFFTDx | no solution; 2, 0, 0 | build error; 16, 6, 3 | build error; 16, 6, 4 |
+| h05_spectral_deriv | cuFFTDx | no solution; 2, 0, 0 | build error; 12, 0, 1 | build error; 16, 6, 6 |
+| h06_gemm_complex_hmma | cuBLASDx | no solution; 2, 0, 0 | build error; 16, 2, 21 | build error; 16, 3, 11 |
+| h07_gemm_alpha_beta | cuBLASDx | no solution; 2, 0, 0 | build error; 16, 2, 7 | build error; 16, 2, 7 |
+| h08_gemm_chain | cuBLASDx | build error; 2, 0, 1 | build error; 16, 3, 2 | build error; 16, 3, 6 |
+
+Solved: A 0 of 8, B 0 of 8, C 0 of 8. This is a floor effect. It says this model, with this budget, does not
+write MathDx code in any condition. It says nothing about whether docs or the MCP loop help a model that can.
+
+What the transcripts do show:
+- **The model does not know the library exists in its real form.** Final build errors include invented headers
+  (`cuda_mathdx.h`, `cudaFFTdx.h`, `cublasDx.h`) and invented host-style functions (`cublasDxCreate`,
+  `cufftDxExec`, `cublasDxGemmBatched`). cuFFTDx and cuBLASDx are header-only C++ templates with no handles. With
+  docs (B, C) it calls `search_docs` and `read_doc` but still writes the invented API.
+- **In A, four of eight runs wrote no solution.** The first turn used the whole 4096-token output budget without a
+  tool call, and the model then called `submit`.
+- **The one correct answer used the wrong library.** In h03, C, the model ran the public test, then submitted a
+  host cuFFT solution that passes the hidden test. `library_used` catches it, so it is counted as not solved. This
+  is the case the separate `solved` field exists for.
+
+The value of the C loop therefore rests on qualitative evidence, not on this run. docs/agent_log.md records two
+cases where Claude Code's code was numerically correct but ran without tensor cores, caught only by SASS. The MCP
+smoke test shows `diagnose` reporting that failure in one call.
+
+## Limitations of the eval
+
+- One model, one run per cell, 8 tasks. No claim generalizes beyond Qwen3 8B with this prompt and budget.
+- Condition C's prompt is longer, since it lists more tools.
+- The HMMA check reads the whole binary, so a dead kernel containing HMMA would pass it (seen in d4 during
+  development). d3 does not enforce that the FFT runs in fp16.
+- h09 and h10 (FFT and GEMM fused) were not written.

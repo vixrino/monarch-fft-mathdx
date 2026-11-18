@@ -36,6 +36,11 @@ interpretations are in [docs/results.md](docs/results.md).
   (47 % of peak memory throughput vs 85 % for cuFFTDx). It executes 2.8× the instructions and about 4.5× the
   shared-memory wavefronts, with heavy bank conflicts.
 
+- **Agent eval: floor effect.** Qwen3 8B solved 0 of 8 held-out MathDx tasks alone, with the docs, and with docs
+  plus the MCP compile/test/SASS loop. It invents headers and host-style APIs that cuFFTDx and cuBLASDx do not
+  have. The one correct answer called host cuFFT and was rejected by the library check. Per-task table:
+  [eval/README.md](eval/README.md).
+
 Observed behavior on sm_75 that I did not expect: with cuBLASDx's plain shared-memory layouts, a complex fp16
 GEMM with fp32 accumulation compiles to FMA, not HMMA. Only the `suggest_layout_smem_*` / `suggest_accumulator`
 path reaches tensor cores, and only when the shape divides the 32×16×8 warp tile.
@@ -87,6 +92,9 @@ The Python reference and its tests run without a GPU:
   configurations were not.
 - **Limited sizes.** Monarch covers N ≤ 4096 with power-of-two two-factor splits. fp32 N = 2048 does not fit in
   shared memory.
+- **Agent eval is one small model, one run per cell.** 8 held-out tasks (h09 and h10 were not written), Qwen3 8B
+  at temperature 0, which solved none in any condition. Condition C also gets a longer prompt (more tool
+  descriptions). The dev task d3 does not enforce fp16 inside the kernel.
 - **No fusion yet.** The reason to have a block-level FFT is fusing it with other work, and I have not measured
   that case.
 
@@ -115,7 +123,8 @@ decisions and failed attempts are logged in docs/decisions.md.
 What the agent struggled with in practice was the MathDx API: which instruction
 cuBLASDx actually selects. Twice it assumed the fp16 GEMMs would use tensor
 cores, and twice they did not. Both times the correctness tests passed, and only
-the SASS check caught it. docs/agent_log.md lists these mistakes. They motivate
-the planned next part: an MCP server with whitelisted compile, validate and
-profile tools, and an evaluation of whether it helps an agent write correct
-MathDx code.
+the SASS check caught it. docs/agent_log.md lists these mistakes. They motivated
+the second part: an MCP server (mcp/) with whitelisted compile, test, SASS and
+diagnose tools, and an evaluation (eval/) of whether docs and that loop help a
+local model write MathDx code. With Qwen3 8B the answer is a floor effect, not
+a yes or no.
