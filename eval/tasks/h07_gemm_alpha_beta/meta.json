@@ -1,0 +1,2 @@
+{"id": "h07_gemm_alpha_beta", "split": "heldout", "library": "cublasdx", "requires_mma": false,
+ "traps": ["transpose expressed as an arrangement, not a copy", "alpha/beta epilogue in place", "non-square, K not a power of two"]}

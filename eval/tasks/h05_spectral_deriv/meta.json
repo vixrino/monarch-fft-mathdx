@@ -1,0 +1,2 @@
+{"id": "h05_spectral_deriv", "split": "heldout", "library": "cufftdx", "requires_mma": false,
+ "traps": ["signed frequency index and the Nyquist bin", "forward and inverse with the same register layout", "real in, real out"]}

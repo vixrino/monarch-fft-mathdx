@@ -1,0 +1,2 @@
+{"id": "h04_ifft_fp16_natural", "split": "heldout", "library": "cufftdx", "requires_mma": false,
+ "traps": ["fp16 implicit batching (two FFTs per register, RRII)", "natural RIRI global layout", "odd batch", "inverse direction and 1/N"]}

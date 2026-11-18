@@ -1,0 +1,2 @@
+{"id": "h02_circ_xcorr", "split": "heldout", "library": "cufftdx", "requires_mma": false,
+ "traps": ["conj on the right operand", "forward and inverse FFT with the same register layout", "1/N on the inverse", "shared memory reuse between executes"]}

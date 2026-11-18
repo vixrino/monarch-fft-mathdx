@@ -1,0 +1,2 @@
+{"id": "h08_gemm_chain", "split": "heldout", "library": "cublasdx", "requires_mma": false,
+ "traps": ["register accumulator back into a shared-memory operand", "synchronization between the two GEMMs", "shared memory reuse"]}

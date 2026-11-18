@@ -12,7 +12,8 @@ same prompt, the same token budget and the same iteration budget:
 
 Status: the 5 dev tasks pass with the reference solutions on the T4
 (`results/tesla_t4/2026-11-17_eval_reference.jsonl`). `eval/harness.py` is written and unit-tested off GPU,
-not yet run with the model. The held-out tasks are not written yet.
+run once on d1 (dev run 1). Held-out tasks h01–h08 are written; h09 and h10 were not written and are
+dropped from all three conditions.
 
 Run (Colab T4, after `ollama serve` and `ollama pull qwen3:8b`):
 `python3 eval/harness.py --tasks d1_ifft_scaled --conditions A B C`. One record per run goes to
@@ -59,8 +60,8 @@ likely to be confidently wrong.
 | h06_gemm_complex_hmma | held-out | cuBLASDx | complex fp16→fp32 GEMM 32×64×32, must run on tensor cores |
 | h07_gemm_alpha_beta | held-out | cuBLASDx | fp32 C = α·Aᵀ·B + β·C, 64 × 32 × 48, in place on C |
 | h08_gemm_chain | held-out | cuBLASDx | D = (A·B)·C for 32 × 32 matrices in one block, fp32 |
-| h09_fft_then_gemm | held-out | both | per row: FFT (N = 64), keep 16 lowest modes, multiply by a complex 16 × 16 weight matrix |
-| h10_gemm_then_fft | held-out | both | C = A·B (64 × 64 × 64, fp32 complex), then FFT of every row of C, one kernel |
+| h09_fft_then_gemm | held-out | both | not written (time); dropped from all conditions |
+| h10_gemm_then_fft | held-out | both | not written (time); dropped from all conditions |
 
 The dev tasks are for building and debugging the harness and may be looked at freely. The held-out tasks
 are run once per condition at the end, with no prompt or harness change after the first held-out run.

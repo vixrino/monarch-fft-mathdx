@@ -1,0 +1,2 @@
+{"id": "h03_thread_fft16", "split": "heldout", "library": "cufftdx", "requires_mma": false,
+ "traps": ["thread-level execution (Thread operator, no smem)", "tail threads past batch"]}

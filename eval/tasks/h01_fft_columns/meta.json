@@ -1,0 +1,2 @@
+{"id": "h01_fft_columns", "split": "heldout", "library": "cufftdx", "requires_mma": false,
+ "traps": ["strided (column) access", "in place", "no transpose pass"]}

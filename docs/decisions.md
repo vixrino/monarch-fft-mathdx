@@ -801,3 +801,47 @@ Known gaps I am keeping, reported as limitations:
 - **d3 fp16.** Nothing enforces fp16 compute: an fp32 FFT also meets 1e-2.
 - **C's prompt is longer.** C's six extra tool schemas lengthen every prompt, so it reaches CTX_STOP a little
   earlier. The records keep last_prompt_tokens.
+
+## Final session plan (2026-11-18)
+
+### Fair baseline: cuFFTDx tuning grid
+- **The criticism.** Comparing a tuned Monarch against cuFFTDx's suggested configuration is unfair: Monarch
+  got a persistent grid, a shared F and a transposed GEMM 1.
+- **The grid.** `cufftdx_grid_<N>` binaries (block_fft.cu with `DXB_GRID_N`) run every ElementsPerThread that
+  cuFFTDx's sm_75 database lists for that size (`include/cufftdx/database/records/750/database_*_fwd.json`)
+  against FFTsPerBlock in {1, 2, 4, …, 32}. They keep only what the library's static_asserts in
+  `traits/detail/check_and_get_trait.hpp` allow (EPT divides N, at most 1024 threads, even FPB for fp16).
+  Configurations that do not fit in shared memory are skipped at run time and recorded as skipped. Records
+  carry `variant: grid`, and the suggested configuration carries `variant: default`.
+
+### Selection and repeats
+- **Protocol.** The sweep runs 3 times in one session (`sweep.py --grid --repeat 3`, 3 files). For both
+  implementations, the best configuration (cuFFTDx EPT × FPB, Monarch factorization) is chosen on repeat 1
+  only, by throughput at the 2^14 batch among the configs that pass accuracy. The ratios are then reported
+  from repeats 2 and 3 with that choice fixed. This keeps the selection from fitting the noise it is then
+  measured on.
+- **Ties.** A ratio counts as a tie when its range over repeats 2 and 3 contains 1.0.
+- **Fallback.** If repeats 2 and 3 are missing, best-of on the median of the available repeats for both
+  sides, stated as such in results.md.
+
+### Error decomposition
+Each accuracy record now also has `rel_l2_compute_median`. It is measured against an FP64 reference
+computed from the input after rounding to the kernel's I/O type (k_widen of the same buffer, then cuFFT
+Z2Z). The existing `rel_l2_median`, against the exact fp64 input, still includes the input quantization,
+which no fp16 FFT can undo.
+
+### Held-out tasks
+- **Written.** h01–h08, from the task table in eval/README.md, which was fixed before dev run 1. The specs
+  follow the dev specs' format, including the non-blocking-stream sentence that the pre-run review added to
+  every task. No held-out task was changed in response to a dev transcript.
+- **Not written tonight:** h09_fft_then_gemm and h10_gemm_then_fft. They are dropped from all three
+  conditions.
+- **Validation.** Every held-out reference is validated on the GPU (`validate.py`, then again inside the
+  harness) before any agent run. The harness skips a task whose reference fails, in all three conditions, and
+  records `skipped_invalid_reference`.
+- **Unchecked reference choices**, each of which only the GPU validation will confirm:
+  - h02 and h05 pin the inverse FFT to the forward's EPT and FPB and static_assert the same stride, storage
+    and block size, so the spectrum can be multiplied in registers.
+  - h06 relies on the same suggested-layout HMMA path as d4 and mma_probe; 32×64×32 divides the 2×2 warp
+    tile.
+  - h08 re-stages the first product into the A operand through a plain smem buffer.
