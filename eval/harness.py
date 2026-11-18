@@ -357,17 +357,23 @@ def main():
     corpus = load_corpus(os.environ["MATHDX_ROOT"])
     print(f"corpus: {len(corpus)} files; writing {runs_path}", flush=True)
     with tempfile.TemporaryDirectory() as tmp, open(runs_path, "w") as fr, open(tr_path, "w") as ft:
+        # every reference is validated before the first agent run; a task whose reference fails is dropped from
+        # all conditions
+        valid = []
         for t in ids:
             task_dir = os.path.join(EVAL, "tasks", t)
             meta = json.load(open(os.path.join(task_dir, "meta.json")))
             ref = validate.validate(task_dir, tmp)
             ref_ms = ref.get("hidden", {}).get("time_ms") if ref["valid"] else None
             print(f"{t}: reference valid={ref['valid']} time_ms={ref_ms}", flush=True)
-            if not ref["valid"]:  # a task whose own reference fails its test grades nothing; record and move on
-                fr.write(json.dumps({"task": t, "split": meta["split"], "status": "skipped_invalid_reference",
-                                     "reference": ref, **prov}) + "\n")
-                print(json.dumps(ref)[:2000], flush=True)
+            if ref["valid"]:
+                valid.append((t, task_dir, meta, ref_ms))
                 continue
+            fr.write(json.dumps({"task": t, "split": meta["split"], "status": "skipped_invalid_reference",
+                                 "reference": ref, **prov}) + "\n")
+            print(json.dumps(ref)[:2000], flush=True)
+        print(f"agent runs on {[v[0] for v in valid]}", flush=True)
+        for t, task_dir, meta, ref_ms in valid:
             for c in a.conditions:
                 rec, msgs = agent(client, a.model, c, task_dir, meta, corpus, tmp)
                 ms = (rec.get("hidden") or {}).get("time_ms")
