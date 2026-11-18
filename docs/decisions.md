@@ -845,3 +845,23 @@ which no fp16 FFT can undo.
   - h06 relies on the same suggested-layout HMMA path as d4 and mma_probe; 32×64×32 divides the 2×2 warp
     tile.
   - h08 re-stages the first product into the A operand through a plain smem buffer.
+
+## Final session results (2026-11-18, sweeps 3-5, commit a8f89ec)
+
+### What the tuned baseline changed
+- **The N ≤ 512 speed claim is gone.** With EPT 2, cuFFTDx fp16 runs 1.46× (N = 256) and 1.28× (512, 1024)
+  faster than its default configuration. Monarch is then 0.79-0.83× of it at N ≤ 1024, every range below 1.0.
+  The README and results.md now lead with accuracy, and the speed result is reported as a loss.
+- **The accuracy claim survives tuning.** EPT also changes cuFFTDx's fp16 error, monotonically: lower EPT, lower
+  error, at every N in the grid. So "tuned" in speed is not "tuned" in accuracy, and I report both. `final.py`
+  has a third cuFFTDx role, "accurate": the lowest total error anywhere in the grid. Monarch still has
+  2.1-3.0× less error than it (2.4-3.4× compute only). I can't explain the EPT dependence from what I've read
+  of cuFFTDx, and I say so in results.md.
+- **Protocol outcome.** No selection had to be revisited. Three tuned/default ranges sit partly or fully below
+  1.0 (fp16 4096, fp32 4096, fp32 8192): the config that won repeat 1 lost its lead in repeats 2-3. I kept the
+  repeat-1 selection, since re-selecting on repeats 2-3 would undo the point of the protocol.
+
+### plot.py keeps the default configuration
+`plot.py` drops `variant == "grid"` rows, so its per-configuration, latency and SASS tables stay about the
+library's default cuFFTDx and the binaries that were SASS-checked. Without this, its "best cuFFTDx" would
+silently become a grid row with no SASS record.

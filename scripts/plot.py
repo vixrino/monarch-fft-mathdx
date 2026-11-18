@@ -51,6 +51,8 @@ def gbps_iqr(r):
 
 
 def split(rows):
+    # the cuFFTDx tuning grid is analysed by final.py; these tables keep the library's default configuration
+    rows = [r for r in rows if r.get("variant") != "grid"]
     timed = [r for r in rows if r.get("status") == "ok" and r["experiment"] != "sass"]
     big = max(r["batch"] for r in timed)
     thr = [r for r in timed if r["batch"] == big]
