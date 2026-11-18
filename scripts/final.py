@@ -134,7 +134,7 @@ def main():
 
 
 def figures(sel, reps, later, err, out):
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4), sharey=True)
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4.4), sharey=True)
     for ax, prec in zip(axes, plot.PRECS):
         for role, color, ls, mk, name in (("default", plot.COLOR["cufftdx"], "--", "s", "cuFFTDx default"),
                                          ("tuned", plot.COLOR["cufftdx"], "-", "o", "cuFFTDx tuned"),
@@ -150,13 +150,13 @@ def figures(sel, reps, later, err, out):
         plot.style(ax, "effective GB/s, batch 2^14" if prec == "fp16" else "")
         plot.xticks(ax, sorted({n for (_, p, n) in sel if p == prec}))
         ax.set_title(prec, color=plot.INK, fontsize=11)
-    axes[0].legend(frameon=False, fontsize=9)
+    fig.legend(*axes[0].get_legend_handles_labels(), loc="lower center", ncol=3, frameon=False, fontsize=9)
     fig.suptitle("Throughput, configuration fixed on repeat 1, mean and range over repeats 2-3",
                  color=plot.INK, fontsize=11)
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0.07, 1, 1))
     fig.savefig(os.path.join(out, "throughput_tuned.png"), dpi=150)
 
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4.6))
     for ax, prec in zip(axes, plot.PRECS):
         for role, color, mk, name, both in (("tuned", plot.COLOR["cufftdx"], "s", "cuFFTDx fastest", False),
                                             ("accurate", plot.COLOR["cufftdx"], "o", "cuFFTDx most accurate", True),
@@ -173,10 +173,11 @@ def figures(sel, reps, later, err, out):
         plot.style(ax, "relative L2 error vs FP64" if prec == "fp16" else "", logy=True)
         plot.xticks(ax, sorted({p[0] for k in err if k[1] == prec for p in err[k]}))
         ax.set_title(prec, color=plot.INK, fontsize=11)
-        ax.legend(frameon=False, fontsize=8)
+    # legend outside the axes: inside, it covered the fp32 curves
+    fig.legend(*axes[0].get_legend_handles_labels(), loc="lower center", ncol=3, frameon=False, fontsize=9)
     fig.suptitle("Error vs exact input (total) and vs input rounded to the I/O type (compute only)",
                  color=plot.INK, fontsize=11)
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0.12, 1, 1))
     fig.savefig(os.path.join(out, "error_decomposition.png"), dpi=150)
     print(f"\nfigures in {out}")
 
