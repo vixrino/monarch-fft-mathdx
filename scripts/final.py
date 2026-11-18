@@ -165,11 +165,13 @@ def figures(sel, reps, later, err, out):
             if not pts:
                 continue
             ns = [p[0] for p in pts]
-            ax.plot(ns, [p[1] for p in pts], color=color, marker=mk, linestyle="--" if not both else "-",
+            ax.plot(ns, [p[1] for p in pts], color=color, marker=mk, markersize=7, linestyle="--" if not both else "-",
                     linewidth=2, label=f"{name}, total")
+            # larger hollow rings: a different marker shape alone was hard to tell apart, and a ring stays visible
+            # around the filled total marker where the two curves coincide
             if both:
-                ax.plot(ns, [p[2] for p in pts], color=color, marker="^", linestyle=":", linewidth=2,
-                        label=f"{name}, compute only")
+                ax.plot(ns, [p[2] for p in pts], color=color, marker=mk, markersize=10, markerfacecolor="none",
+                        markeredgewidth=1.5, linestyle=":", linewidth=1.5, label=f"{name}, compute only")
         plot.style(ax, "relative L2 error vs FP64" if prec == "fp16" else "", logy=True)
         plot.xticks(ax, sorted({p[0] for k in err if k[1] == prec for p in err[k]}))
         ax.set_title(prec, color=plot.INK, fontsize=11)
