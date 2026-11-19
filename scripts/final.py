@@ -212,7 +212,7 @@ def figures(sel, reps, later, err, out):
     if have_c32:
         roles.append(("c32_tuned", "cuFFTDx mixed (fp16 I/O, fp32 compute), tuned"))
     roles.append(("monarch", "Monarch (cuBLASDx)"))
-    fig, axes = plt.subplots(1, 2, figsize=(13, 4.9), sharey=True)
+    fig, axes = plt.subplots(1, 2, figsize=(15, 4.9), sharey=True)
     for ax, prec in zip(axes, plot.PRECS):
         ns = sorted({n for (_, p, n) in sel if p == prec})
         present = [(r, name) for r, name in roles if any(ratios(r, prec, n) for n in ns)]
@@ -231,8 +231,9 @@ def figures(sel, reps, later, err, out):
                 if hi > lo:
                     ax.errorbar(x, m, yerr=[[m - lo], [hi - m]], color=plot.INK, linewidth=0.7, capsize=1.5, zorder=3)
                 # white box: keeps the dashed 1.0 line and neighbouring bars from cutting through the label
-                ax.annotate(f"{m:.2f}", (x, hi), xytext=(0, 2), textcoords="offset points", ha="center", va="bottom",
-                            fontsize=7, color=plot.INK, rotation=90 if len(present) > 3 else 0, zorder=4,
+                # horizontal, anchored at the whisker top: rotated labels ran into the whiskers
+                ax.annotate(f"{m:.2f}", (x, hi), xytext=(0, 2.5), textcoords="offset points", ha="center", va="bottom",
+                            fontsize=6.5 if len(present) > 3 else 7, color=plot.INK, zorder=4,
                             bbox=dict(boxstyle="square,pad=0.1", facecolor="white", edgecolor="none"))
         ax.axhline(1.0, color=plot.INK, linestyle="--", linewidth=0.9, zorder=1)
         ax.set_xticks(range(len(ns)), [str(n) for n in ns])
