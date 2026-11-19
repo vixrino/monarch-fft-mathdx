@@ -6,6 +6,7 @@ import argparse
 import datetime
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -43,7 +44,8 @@ def main():
             total, mma, ffma, hfma2, fn = line.split(None, 4)
             # template arguments start with the variant index (see mma_probe.cu); sass_check.sh sorts by name,
             # so the position is the fallback
-            v = fn.split("probe<", 1)[1][0] if "probe<" in fn else str(i)
+            m = re.search(r"probe<(?:\(int\))?(\d)", fn)
+            v = m[1] if m else str(i)
             r = {"experiment": "sass", "binary": "mma_probe", "variant": VARIANT.get(v, v), "function": fn,
                  "sass_total": int(total), "mma": int(mma), "ffma": int(ffma), "hfma2": int(hfma2),
                  "counts": "static", **prov}
