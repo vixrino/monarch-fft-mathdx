@@ -31,8 +31,11 @@ cuobjdump -sass "$bin" | awk '
     }
   }' | sort -t$'\t' -k5 | while IFS=$'\t' read -r t m f h name; do
   # cuFFTDx descriptors demangle to several hundred characters; keep size and precision
-  pretty=$(echo "$name" | $demangle |
+  dem=$(echo "$name" | $demangle)
+  pretty=$(echo "$dem" |
     sed -E 's/^void ([a-z_]+)<.*Size<\(unsigned int\)([0-9]+)>.*Precision<([^>]+)>.*$/\1 N=\2 \3/')
+  # fp32 compute with fp16 storage: the only float-precision block_fft whose I/O type is __half2
+  case "$pretty" in "block_fft N="*" float") echo "$dem" | grep -q '__half2' && pretty="$pretty io=__half2" ;; esac
   if [ -n "$filter" ] && ! echo "$pretty" | grep -q -- "$filter"; then continue; fi
   printf "%7s %6s %6s %6s  %s\n" "$t" "$m" "$f" "$h" "${pretty:0:140}"
 done | if [ -n "${OPS:-}" ]; then

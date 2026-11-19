@@ -4,7 +4,9 @@
 #   - cuFFTDx tuned:   fastest EPT x FPB (grid or default) at the throughput batch, accuracy passing;
 #   - cuFFTDx default: the library's suggested configuration;
 #   - cuFFTDx accurate: lowest rel L2 over the grid (accuracy only; seeds are fixed, so repeats do not change it);
-#   - Monarch:         fastest factorization n1 x n2.
+#   - Monarch:         fastest factorization n1 x n2;
+#   - c32_*:           the same three roles for cuFFTDx computing in fp32 on fp16 storage (precision "fp16",
+#                      compute "fp32"); only in sweeps from the commit that added it.
 # A ratio whose range over repeats 2-3 contains 1.0 is reported as a tie.
 #   python3 scripts/final.py results/tesla_t4/<d>_sweep_a.jsonl <..._b> <..._c> [--figures docs/figures/tesla_t4]
 import argparse
@@ -26,10 +28,14 @@ def load(path):
     return [json.loads(l) for l in open(path) if l.strip()]
 
 
+C32 = "#7b4fc9"  # third series: cuFFTDx with fp32 compute on fp16 storage
+
+
 def key(r):
     if r["impl"] == "monarch":
         return ("monarch", r["precision"], r["n"], f"{r['n1']}x{r['n2']}")
-    return ("cufftdx", r["precision"], r["n"], f"e{r['ept']}f{r['ffts_per_block']}", r.get("variant", "default"))
+    impl = "c32" if r.get("compute", r["precision"]) != r["precision"] else "cufftdx"
+    return (impl, r["precision"], r["n"], f"e{r['ept']}f{r['ffts_per_block']}", r.get("variant", "default"))
 
 
 def throughput(rows):
@@ -44,14 +50,16 @@ def select(rep1):
         if not r["acc_pass"]:
             continue
         impl, prec, n = k[:3]
-        for role in (["monarch"] if impl == "monarch" else ["tuned"] + (["default"] if k[4] == "default" else [])):
+        p = "c32_" if impl == "c32" else ""
+        roles = ["monarch"] if impl == "monarch" else [p + "tuned"] + ([p + "default"] if k[4] == "default" else [])
+        for role in roles:
             cur = sel.get((role, prec, n))
-            if role == "default" or cur is None or r["gbps_eff"] > rep1[cur]["gbps_eff"]:
+            if role.endswith("default") or cur is None or r["gbps_eff"] > rep1[cur]["gbps_eff"]:
                 sel[(role, prec, n)] = k
-        if impl == "cufftdx":
-            cur = sel.get(("accurate", prec, n))
+        if impl != "monarch":
+            cur = sel.get((p + "accurate", prec, n))
             if cur is None or r["rel_l2_median"] < rep1[cur]["rel_l2_median"]:
-                sel[("accurate", prec, n)] = k
+                sel[(p + "accurate", prec, n)] = k
     return sel
 
 
@@ -85,10 +93,11 @@ def main():
     print("| prec | N | cuFFTDx default | cuFFTDx tuned (config) | Monarch (n1xn2) | Monarch / tuned [range] | "
           "tuned / default [range] | verdict |")
     print("|---|---:|---:|---:|---:|---:|---:|---|")
+    c32_rows = []
     table = defaultdict(dict)
     for prec in plot.PRECS:
         for n in sorted({k[2] for k in sel if k[1] == prec}):
-            vals = {role: [g(role, prec, n, r) for r in later] for role in ("default", "tuned", "monarch")}
+            vals = {role: [g(role, prec, n, r) for r in later] for role in ("default", "tuned", "monarch", "c32_tuned")}
             gb = {role: stats([r["gbps_eff"] for r in v]) if all(v) else None for role, v in vals.items()}
             row = [prec, str(n)]
             row.append(f"{gb['default'][0]:.1f}" if gb["default"] else "-")
@@ -104,6 +113,23 @@ def main():
             if gb["tuned"] and gb["default"]:
                 td = fmt_range(*stats([t["gbps_eff"] / d["gbps_eff"] for t, d in zip(vals["tuned"], vals["default"])]))
             print("| " + " | ".join(row + [ratio, td, verdict]) + " |")
+            if all(vals["c32_tuned"]):
+                c = stats([r["gbps_eff"] for r in vals["c32_tuned"]])
+                line = [prec, str(n), f"{c[0]:.1f} ({cfg_name(sel[('c32_tuned', prec, n)])})"]
+                for other in ("tuned", "monarch"):
+                    if all(vals[other]):
+                        rs = stats([o["gbps_eff"] / t["gbps_eff"] for o, t in zip(vals[other], vals["c32_tuned"])])
+                        v = "tie" if rs[1] <= 1 <= rs[2] else ("faster" if rs[1] > 1 else "slower")
+                        line.append(f"{fmt_range(*rs)} ({v})")
+                    else:
+                        line.append("-")
+                c32_rows.append(line)
+    if c32_rows:
+        print("\n### cuFFTDx with fp32 compute on fp16 storage (tuned on repeat 1, repeats 2-3)\n")
+        print("| prec | N | fp32-compute GB/s (config) | cuFFTDx fp16 tuned / it [range] | Monarch / it [range] |")
+        print("|---|---:|---:|---:|---:|")
+        for line in c32_rows:
+            print("| " + " | ".join(line) + " |")
 
     print("\n### Accuracy of the selected configurations (repeat 1; median over 5 seeds)\n")
     print("| prec | N | impl | total rel L2 | compute rel L2 | total / compute |")
@@ -111,7 +137,7 @@ def main():
     err = defaultdict(list)
     for prec in plot.PRECS:
         for n in sorted({k[2] for k in sel if k[1] == prec}):
-            for role in ("default", "tuned", "accurate", "monarch"):
+            for role in ("default", "tuned", "accurate", "c32_default", "c32_tuned", "c32_accurate", "monarch"):
                 k = sel.get((role, prec, n))
                 if not k:
                     continue
@@ -120,7 +146,9 @@ def main():
                 err[(role, prec)].append((n, t, c))
                 print(f"| {prec} | {n} | {role} ({cfg_name(k)}) | {t:.2e} | {c:.2e} | {t / c:.2f} |" if c else
                       f"| {prec} | {n} | {role} | {t:.2e} | - | - |")
-    for role in ("tuned", "accurate"):
+    for role in ("tuned", "accurate", "c32_tuned", "c32_accurate"):
+        if not any(err[(role, p)] for p in plot.PRECS):
+            continue
         print(f"\nError ratio cuFFTDx {role} / Monarch:")
         for prec in plot.PRECS:
             mon = {n: (t, c) for n, t, c in err[("monarch", prec)]}
@@ -139,8 +167,11 @@ def figures(sel, reps, later, err, out):
         # default in a light tint with hollow squares: same hue and line style alone did not separate it from tuned
         for role, color, ls, mk, face, name in (("default", "#8fb9ea", "--", "s", "white", "cuFFTDx default"),
                                                ("tuned", plot.COLOR["cufftdx"], "-", "o", None, "cuFFTDx tuned"),
+                                               ("c32_tuned", C32, "-", "D", None, "cuFFTDx fp32 compute, fp16 I/O, tuned"),
                                                ("monarch", plot.COLOR["monarch"], "-", "o", None, "Monarch")):
             ns = sorted(n for (r, p, n) in sel if r == role and p == prec)
+            if not ns:
+                continue
             ys, lo, hi = [], [], []
             for n in ns:
                 v = [rep.get(sel[(role, prec, n)]) for rep in later]
@@ -151,7 +182,7 @@ def figures(sel, reps, later, err, out):
         plot.style(ax, "effective GB/s, batch 2^14" if prec == "fp16" else "")
         plot.xticks(ax, sorted({n for (_, p, n) in sel if p == prec}))
         ax.set_title(prec, color=plot.INK, fontsize=11)
-    fig.legend(*axes[0].get_legend_handles_labels(), loc="lower center", ncol=3, frameon=False, fontsize=9)
+    fig.legend(*axes[0].get_legend_handles_labels(), loc="lower center", ncol=4, frameon=False, fontsize=9)
     fig.suptitle("Throughput, configuration fixed on repeat 1, mean and range over repeats 2-3",
                  color=plot.INK, fontsize=11)
     fig.tight_layout(rect=(0, 0.07, 1, 1))
@@ -161,6 +192,7 @@ def figures(sel, reps, later, err, out):
     for ax, prec in zip(axes, plot.PRECS):
         for role, color, mk, name, both in (("tuned", plot.COLOR["cufftdx"], "s", "cuFFTDx fastest", False),
                                             ("accurate", plot.COLOR["cufftdx"], "o", "cuFFTDx most accurate", True),
+                                            ("c32_accurate", C32, "D", "cuFFTDx fp32 compute, fp16 I/O", True),
                                             ("monarch", plot.COLOR["monarch"], "o", "Monarch", True)):
             pts = err[(role, prec)]
             if not pts:

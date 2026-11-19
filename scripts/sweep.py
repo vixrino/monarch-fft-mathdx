@@ -32,7 +32,7 @@ def new_path(root):
 
 # sass_check.sh shortens names; these recover the configuration from what it prints
 MONARCH = re.compile(r"monarch<(__half|float), \(unsigned int\)(\d+), \(unsigned int\)(\d+), \(unsigned int\)(\d+)>")
-CUFFTDX = re.compile(r"^block_fft N=(\d+) (__half|float)$")
+CUFFTDX = re.compile(r"^block_fft N=(\d+) (__half|float)( io=__half2)?$")
 PREC = {"__half": "fp16", "float": "fp32"}
 
 
@@ -46,7 +46,7 @@ def sass_records(binary, prov):
             r.update(impl="monarch", precision=PREC[m[1]], n1=int(m[2]), n2=int(m[3]), n=int(m[2]) * int(m[3]),
                      ffts_per_block=int(m[4]))
         elif m := CUFFTDX.match(fn):
-            r.update(impl="cufftdx", precision=PREC[m[2]], n=int(m[1]))
+            r.update(impl="cufftdx", precision="fp16" if m[3] else PREC[m[2]], compute=PREC[m[2]], n=int(m[1]))
         else:
             continue  # table/fill/widen helper kernels
         yield {**r, **prov}
@@ -71,9 +71,10 @@ def one_sweep(a, rep):
         for b in BINARIES:
             for r in sass_records(os.path.join(a.build, b), prov):
                 f.write(json.dumps(r) + "\n")
-                print(f"  sass {r['impl']:8s} {r['precision']} N={r['n']:5d} "
+                prec = r["precision"] + ("c32" if r.get("compute", r["precision"]) != r["precision"] else "")
+                print(f"  sass {r['impl']:8s} {prec:7s} N={r['n']:5d} "
                       f"{str(r.get('n1', '')) + 'x' + str(r.get('n2', '')) if 'n1' in r else '':7s} "
-                      f"mma={r['mma']:4d} total={r['sass_total']:6d}")
+                      f"mma={r['mma']:4d} ffma={r['ffma']:5d} hfma2={r['hfma2']:5d} total={r['sass_total']:6d}")
     print(path)
     return ok
 

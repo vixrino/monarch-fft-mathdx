@@ -875,3 +875,19 @@ silently become a grid row with no SASS record.
   it. The reference-validation file of this session was not downloaded; every task got agent runs, which the
   harness only starts for a valid reference.
 - **Not changed after the run.** No prompt, budget or task edit, as fixed in the protocol.
+
+## cuFFTDx with fp32 compute on fp16 storage (added after review, 2026-11-19)
+
+- **What.** A third cuFFTDx variant: `Precision<float>`, global I/O `__half2`. Each thread widens its loaded
+  elements with `__half22float2`, runs the fp32 FFT, and rounds once on the store with `__floats2half2_rn`. Same
+  default configuration logic, same EPT × FPB grid (fp32 legality rules: no even-FPB constraint), same harness,
+  so the rounded-input reference and the accuracy tolerance (1e-2) are the fp16 ones.
+- **Why.** The fp16 comparison so far set Monarch (fp16 storage, fp32 accumulation) against cuFFTDx fp16, whose
+  butterflies round to fp16 at every stage. The fair question is whether Monarch's accuracy comes from tensor
+  cores or only from accumulating in fp32. A conventional FFT that stores fp16 and computes in fp32 separates the
+  two: it has the same I/O bytes as both fp16 kernels and no fp16 rounding inside the transform.
+- **Records.** `precision` stays the storage type ("fp16"), a new `compute` field says "fp32". Keys use
+  `fp16c32`. final.py reports it under the roles `c32_default`, `c32_tuned`, `c32_accurate`; plot.py leaves it
+  out. sass_check.sh tags the kernel `io=__half2` so its SASS row is not confused with the fp32 kernel.
+- **Alternatives.** Converting in shared memory, or vectorized loads of two `__half2` at once. I did not try
+  them; the per-element conversion is the simplest form and matches how the fp16 path loads.
