@@ -30,7 +30,8 @@ chosen on repeat 1 and measured on repeats 2-3. Tables and method: [docs/results
 **cuBLASDx on sm_75:** with the plain shared-memory layouts, a complex fp16 GEMM with fp32 accumulator compiles to
 HMUL2 + FADD, no HMMA: 5.9× slower and 770× the error of the suggested-layout kernel
 (`results/tesla_t4/2026-11-19_mma_probe_3.jsonl`). Repro and header lines:
-[docs/cublasdx_sm75_layouts.md](docs/cublasdx_sm75_layouts.md).
+[docs/cublasdx_sm75_layouts.md](docs/cublasdx_sm75_layouts.md). Asked upstream:
+[NVIDIA/CUDALibrarySamples#378](https://github.com/NVIDIA/CUDALibrarySamples/issues/378).
 
 ## Layout
 

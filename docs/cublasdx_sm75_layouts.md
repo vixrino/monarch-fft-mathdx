@@ -1,5 +1,7 @@
 # cuBLASDx 0.8.0 on sm_75: complex fp16 × fp16 → fp32 GEMM with the plain layouts gets no MMA and fp16 products. Intended?
 
+Posted as [NVIDIA/CUDALibrarySamples#378](https://github.com/NVIDIA/CUDALibrarySamples/issues/378).
+
 A question, scoped to what I ran: complex `__half` inputs, `float` accumulator, sm_75 (Tesla T4), cuBLASDx 0.8.0.
 I have not run real-valued fp16, other shapes or other GPUs.
 
