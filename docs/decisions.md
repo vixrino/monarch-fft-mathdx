@@ -922,3 +922,21 @@ package after writing the variant. The mechanism is the same:
   descriptor because it also runs a shared-memory-API kernel with that layout. My fp16 and fp32 baselines do not
   use it, so the three cuFFTDx variants differ only in precision and I/O type. The example's default
   configuration (suggested EPT and FPB) is also what my "default" role uses; the grid adds the tuned ones.
+
+## The mixed-precision baseline changes the headline (2026-11-19, sweeps at 83e3916)
+
+- **Run.** `sweep.py --grid --repeat 3` in one session, all variants re-measured together:
+  `results/tesla_t4/2026-11-19_sweep{,_2,_3}.jsonl`, `git_dirty: false`. These replace the 11-18 sweeps as the
+  source of docs/results.md and the README.
+- **Outcome.** At fp16 storage, cuFFTDx computing in fp32 has 0.73-0.74× Monarch's total error and Monarch runs at
+  0.80-0.85× of its throughput (N ≤ 1024), 0.47-0.53× above. Its error is 2.77-2.78e-4 for every N and
+  configuration, which `scripts/storage_floor.py` reproduces as the floor of rounding input and output to fp16.
+- **What I changed in the write-up.** The headline is now the negative result: on the T4, fp32 compute with fp16
+  storage dominates, and Monarch's advantage is only over pure-fp16 cuFFTDx. The earlier "Mechanism" bullet
+  attributed the accuracy to tensor cores; the gain comes from fp32 accumulation, and Monarch loses some of it to
+  the fp16 intermediate between its GEMMs.
+- **Not done, listed as limitations.** A Monarch variant with an fp32 intermediate (it would need GEMM 2 to take
+  fp32 operands, so FFMA on sm_75), split fp32 → 2× fp16, fusion.
+- **Drift.** Absolute throughput fell across the three repeats at large N, by 22 % for the mixed default at
+  N = 4096. Ratios are paired within a repeat; a drift that hits one kernel more than another still biases them,
+  which the ranges partly show (Monarch/mixed at 2048: [0.43, 0.51]).

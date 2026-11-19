@@ -42,7 +42,7 @@ All paths below are under `include/cublasdx/database/gemm/`.
   - An atom is kept only if `cute::evenly_divides(GEMMShape, warp_tile × atom_shape)`. For
     `SM75_16x8x8_C32C16C16C32_TN` that means M % 32 == 0, N % 16 == 0 and K % 8 == 0. Otherwise `type = void`
     and the GEMM uses FMA.
-  - In my code this applied to 8×N GEMMs; transposing the product so that the larger dimension is M gave HMMA.
+  - In my code this applied to 8×N GEMMs; transposing the product so that the batch dimension became M gave HMMA.
 
 ## The documentation sentence it differs from
 
