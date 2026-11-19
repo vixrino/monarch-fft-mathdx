@@ -10,29 +10,32 @@ I measured this on one GPU, a Tesla T4 (sm_75), with MathDx 26.10
 
 ## Findings
 
-From three repeats of one sweep in one Colab session (`results/tesla_t4/2026-11-18_sweep_{3,4,5}.jsonl`), batch
+**On the T4, fp32 compute on fp16 storage dominates. The tensor-core Monarch FFT only beats pure-fp16 cuFFTDx.**
+
+From three repeats of one sweep in one Colab session (`results/tesla_t4/2026-11-19_sweep{,_2,_3}.jsonl`), batch
 16384. Configurations are chosen on repeat 1 and measured on repeats 2-3. The tables, the method and the
 interpretations are in [docs/results.md](docs/results.md).
 
+![throughput relative to tuned cuFFTDx](docs/figures/tesla_t4/throughput_tuned.png)
 ![total and compute-only error](docs/figures/tesla_t4/error_decomposition.png)
-![throughput, configuration fixed on repeat 1](docs/figures/tesla_t4/throughput_tuned.png)
 
-- **fp16 accuracy is the result that holds.** Monarch's relative L2 error against FP64 is 3.7-3.8e-4 at every N
-  from 256 to 4096. The most accurate cuFFTDx fp16 configuration in a full EPT × FPB grid has 2.1× (N = 256) to
-  3.0× (N = 4096) more error. Against the error of the transform alone (input already rounded to fp16), the gap
-  grows to 2.4-3.4×, so it is not an input-quantization effect.
-- **Mechanism, from SASS.** cuFFTDx's fp16 butterflies run in HFMA2, so every stage rounds to fp16. Monarch's GEMMs
-  run on HMMA with fp32 accumulation and round to fp16 at about three points. Fewer roundings and a flat error
-  in N fit this; it is a reading, not a proof.
-- **Speed: tuned cuFFTDx is faster everywhere.** Monarch fp16 reaches 0.83× (N = 256), 0.80× (512), 0.79× (1024)
-  and 0.41× (2048, 4096) of tuned cuFFTDx, with no range over the repeats near 1.0. Against cuFFTDx's default
-  configuration, it was 1.21× faster at N = 256. That earlier speed result depended on the default: EPT 2 makes
-  cuFFTDx fp16 1.46× faster at N = 256.
-- **fp32:** the T4 has no fp32 tensor cores, so Monarch's GEMMs run on FFMA. It reaches 0.14-0.36× of tuned
+- **At equal storage (fp16 in, fp16 out), cuFFTDx with fp32 compute beats Monarch on both axes.** Monarch has
+  1.35-1.37× its total error (3.7-3.8e-4 vs 2.8e-4) and runs at 0.80-0.85× of its throughput for N ≤ 1024, about
+  0.5× at 2048-4096. No range over the repeats reaches 1.0.
+- **That mixed variant sits on the fp16 storage floor.** Its error is 2.8e-4 total and 2.1e-4 compute-only at every
+  N and every configuration, the same as an exact FFT whose input and output are rounded to fp16
+  (`scripts/storage_floor.py`). It costs 0-5 % throughput against pure-fp16 cuFFTDx up to N = 1024, and 12-26 %
+  above.
+- **Against pure-fp16 cuFFTDx, Monarch is more accurate and slower.** 2.1× (N = 256) to 3.0× (N = 4096) less error
+  than the most accurate fp16 configuration in a full EPT × FPB grid, at 0.80-0.83× of the fastest (N ≤ 1024) and
+  0.41× above. Its advantage comes from accumulating in fp32, which the mixed variant also does, without Monarch's
+  fp16 intermediate between the two GEMMs.
+- **fp32:** the T4 has no fp32 tensor cores, so Monarch's GEMMs run on FFMA. It reaches 0.14-0.37× of tuned
   cuFFTDx's throughput, with 1.3-1.8× its best error.
 - **Tensor cores, in SASS and ncu:** every fp16 Monarch kernel contains HMMA. In the two fp16 Monarch kernels I
   profiled (earlier session), the tensor pipe is active 19-33 % at runtime. The fp32 Monarch kernels and the
-  default cuFFTDx kernels contain none; the grid (tuned) cuFFTDx binaries were not SASS-checked.
+  default cuFFTDx kernels (fp16, mixed, fp32) contain none; the grid (tuned) cuFFTDx binaries were not
+  SASS-checked.
 - **Why Monarch slows down at large N (Nsight Compute, fp16 64×64, earlier session):** it is not memory-bound
   (47 % of peak memory throughput vs 85 % for cuFFTDx). It executes 2.8× the instructions and about 4.5× the
   shared-memory wavefronts, with heavy bank conflicts.
@@ -46,7 +49,7 @@ Observed behavior on sm_75 that I did not expect: with cuBLASDx's plain shared-m
 GEMM with fp32 accumulation compiles to FMA, not HMMA. Only the `suggest_layout_smem_*` / `suggest_accumulator`
 path reaches tensor cores, and only when the shape divides the 32×16×8 warp tile.
 [docs/cublasdx_sm75_layouts.md](docs/cublasdx_sm75_layouts.md) has the repro, the instruction counts and the
-header lines involved.
+header lines involved. Reported upstream: <link>.
 
 ## Layout
 
@@ -84,34 +87,41 @@ The Python reference and its tests run without a GPU:
 
 ## Limitations
 
-- **One GPU and one session.** T4 only, so nothing here covers Ampere or Hopper tensor cores. The final numbers are
-  three repeats in one Colab session with unlocked clocks; they bound noise within the session, not across
-  sessions.
+- **One GPU and one session.** T4 only, so nothing here covers Ampere or Hopper, where tensor-core and fp32
+  throughput differ. The final numbers are three repeats in one Colab session with unlocked clocks. Absolute
+  throughput drifts down across the repeats at large N, most for the mixed variant (−22 % at N = 4096); ratios
+  are taken within a repeat.
 - **Tuning differs in kind.** cuFFTDx gets the full grid of its two exposed knobs. Monarch gets its factorization,
   plus structural choices I made by hand (persistent grid, shared F table, transposed GEMM 1).
-- **Partial profiling.** Four fp16 kernels from an earlier session were profiled; the tuned cuFFTDx
+- **Partial profiling.** Four fp16 kernels from an earlier session were profiled; the tuned and mixed cuFFTDx
   configurations were not.
 - **Limited sizes.** Monarch covers N ≤ 4096 with power-of-two two-factor splits. fp32 N = 2048 is missing: at
   2 FFTs per block it needs 72 KB of shared memory; 1 FFT per block would fit, and I did not run it.
 - **Agent eval is one small model, one run per cell.** 8 held-out tasks (h09 and h10 were not written), Qwen3 8B
   at temperature 0, which solved none in any condition. Condition C also gets a longer prompt (more tool
   descriptions). The dev task d3 does not enforce fp16 inside the kernel.
-- **No fusion yet.** The reason to have a block-level FFT is fusing it with other work, and I have not measured
-  that case.
+- **Not tried:** a Monarch variant that keeps the intermediate between the GEMMs in fp32, the split fp32 → 2× fp16
+  scheme, and fusion with other work in the same kernel, which is the reason to have a block-level FFT.
 
 ## Prior work
 
 - **The Monarch decomposition on tensor cores** is from FlashFFTConv
   (Fu et al., ICLR 2024).
-- **Half-precision tensor-core FFTs:** tcFFT (Li, Cheng, Lin, 2021,
-  arXiv:2104.11471) and the split fp32 → 2× fp16 line of work (SC18 poster and
-  follow-ups) did this before.
-- **The baseline** follows NVIDIA's MathDx examples.
+- **tcFFT** (Li, Cheng, Lin, 2021, arXiv:2104.11471) found its error at the
+  level of half-precision cuFFT and attributed it to storing intermediates in
+  half precision between merging stages (section 5.2). Monarch's two stages
+  with fp32 accumulation and one fp16 intermediate are consistent with that.
+- **Split fp32 → 2× fp16:** the ORNL/UTK work (Cheng, Sorna, D'Azevedo, SC18
+  poster; Sorna et al., with Wong and Tomov) recovers accuracy on fp16 tensor
+  cores by splitting each fp32 value into two fp16 values.
+- **The baselines** follow NVIDIA's MathDx examples, including
+  `08_mixed_precision/mixed_precision_fft_1d` for the fp32-compute variant.
 
 What this repo adds is narrow:
 - a block-level Monarch FFT built from MathDx pieces;
-- a head-to-head comparison against cuFFTDx rather than cuFFT, with the error
-  measured against FP64 on the same inputs;
+- a head-to-head comparison against cuFFTDx rather than cuFFT, including
+  cuFFTDx's fp32-compute / fp16-storage mode, with the error measured against
+  FP64 on the same inputs and split into input and compute parts;
 - a record of which cuBLASDx configurations reach HMMA on sm_75.
 
 ## License

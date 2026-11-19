@@ -1,6 +1,6 @@
 # cuBLASDx on sm_75: complex fp16→fp32 GEMM uses FMA with the plain layouts, HMMA with the suggested ones
 
-Written so it can be posted as-is as an issue or forum post. It describes observed behavior only.
+This describes observed behavior on one GPU. I am not claiming it is a bug; the question is at the end.
 
 ## Environment
 
@@ -42,7 +42,7 @@ All paths below are under `include/cublasdx/database/gemm/`.
   - An atom is kept only if `cute::evenly_divides(GEMMShape, warp_tile × atom_shape)`. For
     `SM75_16x8x8_C32C16C16C32_TN` that means M % 32 == 0, N % 16 == 0 and K % 8 == 0. Otherwise `type = void`
     and the GEMM uses FMA.
-  - I hit this with 8×N GEMMs, fixed by transposing the product so that the batch dimension is M.
+  - In my code this applied to 8×N GEMMs; transposing the product so that the larger dimension is M gave HMMA.
 
 ## The documentation sentence it differs from
 
@@ -65,7 +65,8 @@ measured variant 0 against variant 1 at this size beyond the instruction counts.
 
 ## Minimal repro
 
-`cuda/monarch/mma_probe.cu` in this repository (one source file, about 110 lines). The descriptor:
+[`cuda/monarch/mma_probe.cu`](https://github.com/vixrino/monarch-fft-mathdx/blob/main/cuda/monarch/mma_probe.cu)
+(one source file, about 110 lines). The descriptor:
 
 ```cpp
 using base = decltype(cublasdx::Size<64, 64, 64>() + cublasdx::Precision<__half, __half, float>() +
@@ -81,4 +82,11 @@ The kernel body is the same in all variants: `copy` to shared memory, `copy_wait
 cmake -S . -B build -DCUDA_ARCH=75 -DMATHDX_ROOT=<.../nvidia/mathdx/26.10> && cmake --build build --target mma_probe
 ./build/mma_probe                                  # plain / suggested / forced: max |err| = 0
 bash scripts/sass_check.sh build/mma_probe probe   # total, mma, ffma, hfma2 per kernel
+cuobjdump -sass build/mma_probe | grep -c HMMA     # without the repo script: HMMA over all three kernels
 ```
+
+## Question
+
+Is FMA the intended instruction on sm_75 for this precision and shape when the plain layouts are used? If it is,
+could the supermma card's sentence about scalar FMA be scoped to the suggested-layout configuration, or mention
+that the tuning database can select FMA for other layouts?
