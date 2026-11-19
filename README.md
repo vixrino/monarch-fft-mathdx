@@ -1,4 +1,4 @@
-# DxBench: Monarch FFT on cuBLASDx vs cuFFTDx
+# monarch-fft-mathdx: Monarch FFT on cuBLASDx vs cuFFTDx
 
 For batched 1D complex FFTs computed inside one CUDA block, when does a
 four-step / Monarch factorization N = n1·n2, run as two small GEMMs with
@@ -113,6 +113,10 @@ What this repo adds is narrow:
 - a head-to-head comparison against cuFFTDx rather than cuFFT, with the error
   measured against FP64 on the same inputs;
 - a record of which cuBLASDx configurations reach HMMA on sm_75.
+
+## License
+
+Apache-2.0, see [LICENSE](LICENSE). The cuFFTDx baseline follows NVIDIA's MathDx examples, also Apache-2.0.
 
 ## How this was built
 
