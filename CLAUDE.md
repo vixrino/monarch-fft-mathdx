@@ -1,4 +1,4 @@
-# DxBench — project context for Claude Code
+# monarch-fft-mathdx — project context for Claude Code
 
 ## What this project is
 
@@ -13,9 +13,8 @@ Secondary question (later phase): do NVIDIA's agent-facing docs (cuBLASDx
 "Agent BLAS Performance Guide", llms.txt) plus an MCP compile/validate/profile
 loop measurably improve an LLM agent's ability to write correct MathDx code?
 
-The author is Lucas, an MS student applying to NVIDIA's Math Libraries (Dx) team.
-The repo must be something he can fully explain and defend line by line in a
-technical interview. Small and correct beats large and unfinished.
+Small and correct beats large and unfinished. Every line should be one the author
+can explain.
 
 ## Prior work (always credit, never claim as novel)
 
@@ -53,7 +52,7 @@ technical interview. Small and correct beats large and unfinished.
    (`cuobjdump -sass` / `nvdisasm`) and grep for HMMA/MMA instructions, or use
    Nsight Compute tensor-pipe metrics. Record the evidence.
 4. **You implement the whole project**, including the Monarch kernel and the
-   derivation. Because Lucas must be able to explain everything afterwards:
+   derivation. So that every decision stays explainable:
    - Keep code comments minimal (see Code style); put the reasoning behind each
      sync, layout, precision and template parameter in docs/decisions.md.
    - Keep `docs/decisions.md` up to date: one entry per non-obvious decision
@@ -65,7 +64,7 @@ technical interview. Small and correct beats large and unfinished.
 6. No arbitrary shell execution exposed through the MCP server: controlled,
    whitelisted build/run commands only.
 
-## Code style — write like a strong engineering student, not like an assistant
+## Code style
 
 - Terse and idiomatic. Code should read like a focused project by someone who
   knows CUDA well, in the style of good open-source research code (e.g. CUTLASS
@@ -97,7 +96,7 @@ technical interview. Small and correct beats large and unfinished.
 - Keep a running log in docs/agent_log.md of MathDx mistakes you made during
   development (wrong operator, illegal shape, layout bug) and how they were
   caught: it is real data for the agent evaluation in phase 6.
-- Personal study material (walkthrough.md, interview_prep.md) goes in `notes/`,
+- Personal study material goes in `notes/`,
   which is git-ignored.
 
 ## Technical conventions
