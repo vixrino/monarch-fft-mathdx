@@ -91,8 +91,12 @@ target_link_libraries(monarch_fft PRIVATE ${cublasdx_target} CUDA::cufft CUDA::n
 # which cuBLASDx configuration reaches the tensor cores on this SM; see docs/decisions.md
 add_executable(mma_probe cuda/monarch/mma_probe.cu)
 target_include_directories(mma_probe PRIVATE cuda/common)
-target_compile_definitions(mma_probe PRIVATE DXB_SM=${CUDA_ARCH}0)
-target_link_libraries(mma_probe PRIVATE ${cublasdx_target})
+target_compile_definitions(mma_probe PRIVATE
+  DXB_SM=${CUDA_ARCH}0
+  DXB_GIT_COMMIT="${git_commit}"
+  DXB_GIT_DIRTY=${git_dirty}
+  DXB_MATHDX_VERSION="${mathdx_VERSION}")
+target_link_libraries(mma_probe PRIVATE ${cublasdx_target} CUDA::cufft CUDA::nvml)
 
 enable_testing()
 add_test(NAME cufftdx_accuracy COMMAND cufftdx_block_fft --check)
