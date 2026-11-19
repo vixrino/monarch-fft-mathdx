@@ -49,7 +49,7 @@ Observed behavior on sm_75 that I did not expect: with cuBLASDx's plain shared-m
 GEMM with fp32 accumulation compiles to FMA, not HMMA. Only the `suggest_layout_smem_*` / `suggest_accumulator`
 path reaches tensor cores, and only when the shape divides the 32×16×8 warp tile.
 [docs/cublasdx_sm75_layouts.md](docs/cublasdx_sm75_layouts.md) has the repro, the instruction counts and the
-header lines involved. Reported upstream: <link>.
+header lines involved.
 
 ## Layout
 
@@ -102,6 +102,12 @@ The Python reference and its tests run without a GPU:
   descriptions). The dev task d3 does not enforce fp16 inside the kernel.
 - **Not tried:** a Monarch variant that keeps the intermediate between the GEMMs in fp32, the split fp32 → 2× fp16
   scheme, and fusion with other work in the same kernel, which is the reason to have a block-level FFT.
+
+## Next steps (not done)
+
+- Split Monarch's fp16 intermediate into hi + lo fp16 parts (one extra GEMM) to remove its extra rounding and reach the storage floor.
+- Rerun on Ampere or newer: TF32/BF16 tensor cores, and the sm80 cuBLASDx database lists HMMA atoms for these shapes.
+- A fused case (FFT → pointwise → inverse FFT in one kernel), which is where block-level Dx libraries matter.
 
 ## Prior work
 
