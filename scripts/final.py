@@ -211,11 +211,17 @@ def bars(ax, ns, series, logy=False):
 
 
 def annotate(ax, pos, label, ns, ratio, logy=False):
-    for n in ns:
+    # one label per group, above its tallest bar and centered on the group: above the Monarch bar alone it ran
+    # into the taller neighbouring bars
+    tops = {}
+    for (_, n), (_, _, hi) in pos.items():
+        tops[n] = max(tops.get(n, 0), hi)
+    for j, n in enumerate(ns):
         if (label, n) in pos and n in ratio:
-            x, _, top = pos[(label, n)]
-            ax.annotate(f"{ratio[n]:.2f}x", (x, top), xytext=(0, 3), textcoords="offset points", ha="center",
-                        va="bottom", fontsize=8, fontweight="bold", color=plot.INK)
+            ax.annotate(f"{ratio[n]:.2f}x", (j, tops[n]), xytext=(0, 4), textcoords="offset points", ha="center",
+                        va="bottom", fontsize=8.5, fontweight="bold", color=plot.INK)
+    lo, hi = ax.get_ylim()
+    ax.set_ylim(lo, hi * (1.6 if logy else 1.1))
 
 
 def header(fig, title, subtitle, foot):
@@ -258,7 +264,7 @@ def figures(sel, reps, later, err, out):
             if l not in labels:
                 handles.append(h), labels.append(l)
     fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, 0.05), ncol=4, frameon=False, fontsize=9)
-    header(fig, "Throughput", f"Label above each Monarch bar: Monarch / {ref_name}"
+    header(fig, "Throughput", f"Label above each group: Monarch / {ref_name}"
            + (" (fp16 I/O), / cuFFTDx tuned (fp32 I/O)." if have_c32 else "."), foot)
     fig.tight_layout(rect=(0, 0.13, 1, 0.88))
     fig.savefig(os.path.join(out, "throughput_tuned.png"), dpi=150)
@@ -291,7 +297,7 @@ def figures(sel, reps, later, err, out):
     fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, 0.05), ncol=3, frameon=False, fontsize=9)
     acc_name = ("cuFFTDx fp32-compute most accurate / Monarch (fp16 I/O), cuFFTDx most accurate / Monarch (fp32 I/O)"
                 if have_c32 else "cuFFTDx most accurate / Monarch")
-    header(fig, "Accuracy", f"Bars: total error vs exact input. Label above each Monarch bar: {acc_name}.",
+    header(fig, "Accuracy", f"Bars: total error vs exact input. Label above each group: {acc_name}.",
            foot.replace("bars are the mean of repeats 2-3, whiskers their range", "median over 5 seeds"))
     fig.tight_layout(rect=(0, 0.15, 1, 0.88))
     fig.savefig(os.path.join(out, "error_decomposition.png"), dpi=150)
