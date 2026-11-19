@@ -34,6 +34,8 @@ def new_path(root):
 MONARCH = re.compile(r"monarch<(__half|float), \(unsigned int\)(\d+), \(unsigned int\)(\d+), \(unsigned int\)(\d+)>")
 CUFFTDX = re.compile(r"^block_fft N=(\d+) (__half|float)( io=__half2)?$")
 PREC = {"__half": "fp16", "float": "fp32"}
+# git_dirty means tracked source changed; results/ and docs/figures/ are outputs the runner may write
+SRC_ONLY = (":(exclude)results", ":(exclude)docs/figures")
 
 
 def sass_records(binary, prov):
@@ -63,7 +65,7 @@ def one_sweep(a, rep):
         print(f"{b}: exit {r.returncode}", flush=True)
 
     prov = {"git_commit": sh("git", "rev-parse", "--short=7", "HEAD"),
-            "git_dirty": bool(sh("git", "status", "--porcelain", "--untracked-files=no")),
+            "git_dirty": bool(sh("git", "status", "--porcelain", "--untracked-files=no", "--", ".", *SRC_ONLY)),
             "cuobjdump": sh("cuobjdump", "--version").splitlines()[-1],
             "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "cmd": " ".join(sys.argv), "repeat": rep, "repeats": a.repeat}

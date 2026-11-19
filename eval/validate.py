@@ -60,7 +60,8 @@ def provenance():
             "nvcc": q("nvcc", "--version").splitlines()[-1],
             "mathdx_root": os.environ["MATHDX_ROOT"],
             "git_commit": q("git", "-C", ROOT, "rev-parse", "--short=7", "HEAD"),
-            "git_dirty": bool(q("git", "-C", ROOT, "status", "--porcelain", "--untracked-files=no")),
+            "git_dirty": bool(q("git", "-C", ROOT, "status", "--porcelain", "--untracked-files=no", "--", ".",
+                                 ":(exclude)results", ":(exclude)docs/figures")),
             "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
 
 

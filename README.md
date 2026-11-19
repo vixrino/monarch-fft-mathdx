@@ -117,6 +117,7 @@ What this repo adds is narrow:
 ## License
 
 Apache-2.0, see [LICENSE](LICENSE). The cuFFTDx baseline follows NVIDIA's MathDx examples, also Apache-2.0.
+MathDx itself is not redistributed here: the runner downloads it from NVIDIA.
 
 ## How this was built
 

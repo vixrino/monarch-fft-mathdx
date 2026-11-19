@@ -41,7 +41,9 @@ find_package(CUDAToolkit REQUIRED)
 # provenance baked in at configure time; the runner always configures a fresh clone
 execute_process(COMMAND git rev-parse --short HEAD WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
                 OUTPUT_VARIABLE git_commit OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
-execute_process(COMMAND git status --porcelain --untracked-files=no WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+# dirty = tracked source changed; results/ and docs/figures/ are outputs (see docs/decisions.md)
+execute_process(COMMAND git status --porcelain --untracked-files=no -- . ":(exclude)results" ":(exclude)docs/figures"
+                WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
                 OUTPUT_VARIABLE git_status OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
 if(NOT git_commit)
   set(git_commit unknown)

@@ -891,3 +891,34 @@ silently become a grid row with no SASS record.
   out. sass_check.sh tags the kernel `io=__half2` so its SASS row is not confused with the fp32 kernel.
 - **Alternatives.** Converting in shared memory, or vectorized loads of two `__half2` at once. I did not try
   them; the per-element conversion is the simplest form and matches how the fp16 path loads.
+
+## git_dirty: cause and fix (2026-11-19)
+
+- **Observation.** All records of the final sweeps (a8f89ec) and both eval_reference files say
+  `git_dirty: true`. The earlier sweeps (11-17, and 11-18 at 72619e2) say false.
+- **Cause, not results/.** New result files are untracked, and every dirty check already passed
+  `--untracked-files=no`. The tracked files that changed were the PNGs in `docs/figures/<gpu>/`: runner cell 13
+  (`plot.py --tables`) also redraws the figures into the clone. In the 72619e2 session the sweep ran before that
+  cell (clean) and validate.py after it (dirty). In the a8f89ec session the standard cells, including cell 13,
+  ran before cmake was configured again for the grid, and cmake bakes the flag in at configure time. No source
+  file was changed in either session; the sweep code and kernels are those of the commit.
+- **Fix.** The flag now means "tracked source changed": CMakeLists.txt, sweep.py and validate.py run
+  `git status --porcelain --untracked-files=no -- . ':(exclude)results' ':(exclude)docs/figures'`, and runner
+  cell 13 writes its figures to /tmp. Tested in a clone with a modified figure and a modified result file
+  (clean) and a modified README (dirty). Existing result files are unchanged and keep their `true`.
+
+## The fp32-compute baseline against the official mixed-precision example (2026-11-19)
+
+I read example/cufftdx/08_mixed_precision/mixed_precision_fft_1d.cu and common/mixed_io.hpp in the 26.10
+package after writing the variant. The mechanism is the same:
+- Storage vs compute precision is not a cuFFTDx operator. The descriptor carries only the compute precision
+  (`Precision<float>`); the storage type is just the kernel's pointer type (`cufftdx::complex<__half>` in the
+  example, `__half2` here: both are two interleaved halves, 4 bytes). `example::mixed_precision<float, __half>`
+  is a type table in the example, not a library type.
+- The conversion happens per element in the register load/store loops (`example::io_mixed<FFT>::load/store`):
+  `__half2float` on each component on load, `__float2half` on store. I use `__half22float2` and
+  `__floats2half2_rn`, the paired forms; both round to nearest on the store, so results are the same.
+- Differences I kept on purpose: the example adds `experimental::Transposition<by_component_padded>` to the
+  descriptor because it also runs a shared-memory-API kernel with that layout. My fp16 and fp32 baselines do not
+  use it, so the three cuFFTDx variants differ only in precision and I/O type. The example's default
+  configuration (suggested EPT and FPB) is also what my "default" role uses; the grid adds the tuned ones.
