@@ -38,5 +38,5 @@ Checks:
   in-process MCP session.
 - `mcp/smoke_client.py` runs on the GPU machine and launches the server over stdio. It calls every tool on
   the clean repo, then runs `diagnose` on three copies with one injected bug each: a compile error, a
-  conjugated twiddle, and fp16 GEMMs moved back to cuBLASDx's default layouts. The last one is the mistake
+  conjugated twiddle, and complex fp16 GEMMs moved back to cuBLASDx's plain layouts. The last one is the mistake
   in docs/agent_log.md: it passes accuracy but has no HMMA.

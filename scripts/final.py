@@ -291,7 +291,8 @@ def figures(sel, reps, later, err, out):
     filled = matplotlib.lines.Line2D([], [], color=plot.MUTED, marker="o", linestyle="-")
     legend_below(fig, axes, [(filled, "total: exact input"), (hollow, "compute only: input already rounded")])
     fig.text(0.5, 0.02, setup + " Median over 5 seeds. Most accurate = lowest error over the EPT x FPB grid; "
-             "fastest = the tuned configuration of the throughput figure.",
+             "fastest = the tuned configuration of the throughput figure.\nLines break where a size was not run: Monarch fp32 "
+             "N = 2048 needs more than 64 KB of shared memory, so its N = 4096 point stands alone.",
              ha="center", va="bottom", fontsize=7.5, color=plot.MUTED)
     fig.tight_layout(rect=(0, 0.17, 1, 1))
     fig.savefig(os.path.join(out, "error_decomposition.png"), dpi=150)
