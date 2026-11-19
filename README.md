@@ -46,10 +46,11 @@ interpretations are in [docs/results.md](docs/results.md).
   [eval/README.md](eval/README.md).
 
 Observed behavior on sm_75 that I did not expect: with cuBLASDx's plain shared-memory layouts, a complex fp16
-GEMM with fp32 accumulation gets no HMMA (the sm_75 tuning records are all `universal_fma`). Only the
-`suggest_layout_smem_*` / `suggest_accumulator` path reaches tensor cores, and only when the shape divides the
-32×16×8 warp tile. For 8192 GEMMs of 64³ in one launch, the plain kernel takes 13.84 ms and the suggested one
-2.33 ms (`results/tesla_t4/2026-11-19_mma_probe.jsonl`).
+GEMM with fp32 accumulation gets no HMMA (the sm_75 tuning records are all `universal_fma`); its SASS multiplies
+with HMUL2 in fp16 and adds with FADD. For 8192 GEMMs of 64³ it is 5.9× slower than the suggested-layout kernel
+(13.82 vs 2.34 ms), and on random fp16 inputs it has 770× the error (rel L2 2.0e-4 vs 2.6e-7)
+(`results/tesla_t4/2026-11-19_mma_probe_3.jsonl`). Only the `suggest_layout_smem_*` / `suggest_accumulator` path
+reaches tensor cores, and only when the shape divides the 32×16×8 warp tile.
 [docs/cublasdx_sm75_layouts.md](docs/cublasdx_sm75_layouts.md) has the repro, the instruction counts and the
 header lines involved.
 

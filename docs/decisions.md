@@ -953,4 +953,11 @@ package after writing the variant. The mechanism is the same:
 - **Test.** mma_probe now also measures the error of each kernel on random U(-1, 1) complex inputs rounded to
   fp16, against an fp64 GEMM on the same rounded inputs (64 GEMMs per seed, median of 5 seeds, rel L2 and max
   abs). If plain's error is clearly above suggested/forced, the products are rounded to fp16 before the fp32
-  accumulation. Result: pending the run.
+  accumulation.
+- **Result** (`results/tesla_t4/2026-11-19_mma_probe_3.jsonl`, commit 6d3b4ab, opcode histograms included):
+  plain rel L2 2.03e-4, max abs 3.99e-3; suggested and forced 2.64e-7, 9.52e-6. Plain has 770× the error, at the
+  level of fp16 rounding, so the products are rounded to fp16 before the fp32 add. The histogram stored by
+  probe.py confirms the hand-run one: plain 8192 FADD, 8192 HMUL2, no HMMA; suggested and forced 256 HMMA.
+- **Consequence for this repo.** The plain layouts are not only slower on sm_75, they would also have lost the
+  fp32 accumulation that Monarch's accuracy depends on. The Monarch kernels use the suggested path (HMMA in every
+  fp16 kernel, SASS rows of the sweeps), so the published error numbers are not affected.
