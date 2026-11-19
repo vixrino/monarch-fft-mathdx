@@ -4,8 +4,7 @@ Posted as [NVIDIA/CUDALibrarySamples#378](https://github.com/NVIDIA/CUDALibraryS
 
 ## Upstream status
 
-- The maintainers confirmed on #378 that this is an sm_75 bug in the GEMM tuning database; a fix is planned for
-  the next release.
+- The maintainers confirmed on #378 that this is an sm_75 bug; a fix is planned for the next release.
 - Suggested workaround, tested here on a copy of the 26.10 package (`scripts/war_sm75.py`): comment out the 4
   sm75 fp16 includes of `include/cublasdx/database/gemm/database_records.hpp` (`fp16_fp16_fp16`, `fp16_fp16_fp32`,
   `cfp16_cfp16_cfp16`, `cfp16_cfp16_cfp32`).
