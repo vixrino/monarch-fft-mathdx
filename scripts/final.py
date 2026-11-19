@@ -164,142 +164,128 @@ def main():
         figures(sel, reps, later, err, a.figures)
 
 
-# Bar charts in the layout of vendor benchmark slides: grouped bars per N, baselines in grays, the subject
-# (Monarch) in the accent color, the key ratio printed above its bar, the setup in a footnote. Neutral palette:
-# no vendor branding, since this is not an NVIDIA result.
-GRAY_LIGHT, GRAY_DARK = "#c4c4c4", "#6b6b6b"
+# Layout after the performance charts in the cuFFTDx docs (examples page, 26.10): throughput relative to a
+# baseline normalized to 1.0 and drawn in a light color, the ratio printed on each bar, legend and setup note
+# below. Neutral palette and default font: these are not NVIDIA results.
+BASE, DEFAULT, ACCURATE = "#bdbdbd", "#7f7f7f", "#3f3f3f"
+ROLE_COLOR = {"tuned": BASE, "default": DEFAULT, "accurate": ACCURATE, "c32_tuned": C32, "c32_accurate": C32,
+              "monarch": plot.COLOR["monarch"]}
 
 
-def bars(ax, ns, series, logy=False):
-    # series: [(label, color, {n: (value, lo, hi, compute_or_None)})]; returns x position of each (series, n)
-    w = 0.8 / len(series)
-    pos = {}
-    # log axis: every bar starts at the same decade, below the smallest value with margin, so no bar reads as zero
-    floor = 10 ** math.floor(math.log10(min(min(v[0], v[3] or v[0]) for _, _, vals in series for v in vals.values()) / 1.5)) if logy else 0
-    for i, (label, color, vals) in enumerate(series):
-        for j, n in enumerate(ns):
-            if n not in vals:
-                continue
-            v, lo, hi, c = vals[n]
-            x = j - 0.4 + w * (i + 0.5)
-            pos[(label, n)] = (x, v, hi)
-            ax.bar(x, v - floor, w * 0.9, bottom=floor, color=color, label=label if j == min(k for k, m in enumerate(ns) if m in vals) else None,
-                   zorder=2)
-            if hi > lo:
-                ax.errorbar(x, v, yerr=[[v - lo], [hi - v]], color=plot.INK, linewidth=0.8, capsize=1.5, zorder=3)
-            if c is not None:
-                ax.hlines(c, x - w * 0.45, x + w * 0.45, color=plot.INK, linewidth=1.6, zorder=3)
-    ax.set_xticks(range(len(ns)), [str(n) for n in ns])
-    ax.set_xlabel("FFT size N", color=plot.MUTED)
-    if logy:
-        ax.set_yscale("log")
-        top = max(v[0] for _, _, vals in series for v in vals.values())
-        ticks = [m * 10 ** e for e in range(int(math.log10(floor)), int(math.log10(top)) + 2) for m in (1, 2, 3, 5)
-                 if floor <= m * 10 ** e <= top * 1.3]
-        ax.set_ylim(floor, top * 1.35)
-        ax.yaxis.set_major_locator(matplotlib.ticker.FixedLocator(ticks))
-        ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(
-            lambda y, _: f"{y / 10 ** math.floor(math.log10(y)):.0f}e{math.floor(math.log10(y))}"))
-        ax.yaxis.set_minor_locator(matplotlib.ticker.NullLocator())
+def axis_style(ax):
     ax.grid(True, axis="y", color=plot.GRID, linewidth=0.8)
     ax.set_axisbelow(True)
     for sp in ("top", "right", "left"):
         ax.spines[sp].set_visible(False)
-    ax.spines["bottom"].set_color(plot.MUTED)
-    ax.tick_params(colors=plot.MUTED, labelsize=9, length=0)
-    return pos
+    ax.spines["bottom"].set_color(plot.INK)
+    ax.tick_params(colors=plot.INK, labelsize=9)
+    ax.tick_params(axis="y", length=0)
 
 
-def annotate(ax, pos, label, ns, ratio, logy=False):
-    # one label per group, above its tallest bar and centered on the group: above the Monarch bar alone it ran
-    # into the taller neighbouring bars
-    tops = {}
-    for (_, n), (_, _, hi) in pos.items():
-        tops[n] = max(tops.get(n, 0), hi)
-    for j, n in enumerate(ns):
-        if (label, n) in pos and n in ratio:
-            ax.annotate(f"{ratio[n]:.2f}x", (j, tops[n]), xytext=(0, 4), textcoords="offset points", ha="center",
-                        va="bottom", fontsize=8.5, fontweight="bold", color=plot.INK)
-    lo, hi = ax.get_ylim()
-    ax.set_ylim(lo, hi * (1.6 if logy else 1.1))
-
-
-def header(fig, title, subtitle, foot):
-    fig.text(0.012, 0.975, title, ha="left", va="top", fontsize=13, fontweight="bold", color=plot.INK)
-    fig.text(0.012, 0.915, subtitle, ha="left", va="top", fontsize=9.5, color=plot.MUTED)
-    fig.text(0.012, 0.012, foot, ha="left", va="bottom", fontsize=7.5, color=plot.MUTED)
+def legend_below(fig, axes, extra=()):
+    handles, labels = [], []
+    for ax in axes:
+        for h, l in zip(*ax.get_legend_handles_labels()):
+            if l not in labels:
+                handles.append(h), labels.append(l)
+    for h, l in extra:
+        handles.append(h), labels.append(l)
+    fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, 0.06), ncol=4, frameon=False, fontsize=9)
 
 
 def figures(sel, reps, later, err, out):
-    r0 = next(r for r in reps[0].values())
-    foot = (f"{r0['gpu']}, MathDx {r0['mathdx']}, CUDA {r0['cuda_runtime'] // 1000}.{r0['cuda_runtime'] % 1000 // 10}, "
-            f"batch 2^14 FFTs. Configurations chosen on repeat 1; bars are the mean of repeats 2-3, whiskers their range.")
+    r0 = next(iter(reps[0].values()))
+    setup = (f"{r0['gpu']}, MathDx {r0['mathdx']}, CUDA {r0['cuda_runtime'] // 1000}.{r0['cuda_runtime'] % 1000 // 10}, "
+             f"batch 2^14 FFTs per launch.")
     have_c32 = any(k[0].startswith("c32") for k in sel)
-    ref, ref_name = ("c32_tuned", "cuFFTDx fp32-compute tuned") if have_c32 else ("tuned", "cuFFTDx tuned")
 
-    def gb(role, prec, n):
-        v = [rep.get(sel[(role, prec, n)]) for rep in later] if (role, prec, n) in sel else []
-        return stats([x["gbps_eff"] for x in v]) if v and all(v) else None
+    def ratios(role, prec, n):
+        if (role, prec, n) not in sel or ("tuned", prec, n) not in sel:
+            return None
+        v = [rep.get(sel[(role, prec, n)]) for rep in later]
+        t = [rep.get(sel[("tuned", prec, n)]) for rep in later]
+        if not (all(v) and all(t)):
+            return None
+        return stats([a["gbps_eff"] / b["gbps_eff"] for a, b in zip(v, t)])
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4.8), sharey=True)
+    roles = [("tuned", "cuFFTDx tuned (= 1.0)"), ("default", "cuFFTDx default")]
+    if have_c32:
+        roles.append(("c32_tuned", "cuFFTDx fp32 compute, fp16 I/O, tuned"))
+    roles.append(("monarch", "Monarch (cuBLASDx)"))
+    fig, axes = plt.subplots(1, 2, figsize=(13, 4.9), sharey=True)
     for ax, prec in zip(axes, plot.PRECS):
         ns = sorted({n for (_, p, n) in sel if p == prec})
-        series = []
-        for role, color, name in (("default", GRAY_LIGHT, "cuFFTDx default"), ("tuned", GRAY_DARK, "cuFFTDx tuned"),
-                                  ("c32_tuned", C32, "cuFFTDx fp32 compute, fp16 I/O, tuned"),
-                                  ("monarch", plot.COLOR["monarch"], "Monarch (cuBLASDx)")):
-            vals = {n: (*gb(role, prec, n), None) for n in ns if gb(role, prec, n)}
-            if vals:
-                series.append((name, color, vals))
-        pos = bars(ax, ns, series)
-        r = ref if any(gb(ref, prec, n) for n in ns) else "tuned"
-        ratio = {n: gb("monarch", prec, n)[0] / gb(r, prec, n)[0] for n in ns if gb("monarch", prec, n) and gb(r, prec, n)}
-        annotate(ax, pos, "Monarch (cuBLASDx)", ns, ratio)
-        ax.set_title(f"{prec} I/O", loc="left", fontsize=10.5, color=plot.INK, fontweight="bold")
-        if prec == "fp16":
-            ax.set_ylabel("effective GB/s (higher is better)", color=plot.MUTED)
-    handles, labels = [], []
-    for ax in axes:
-        for h, l in zip(*ax.get_legend_handles_labels()):
-            if l not in labels:
-                handles.append(h), labels.append(l)
-    fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, 0.05), ncol=4, frameon=False, fontsize=9)
-    header(fig, "Throughput", f"Label above each group: Monarch / {ref_name}"
-           + (" (fp16 I/O), / cuFFTDx tuned (fp32 I/O)." if have_c32 else "."), foot)
-    fig.tight_layout(rect=(0, 0.13, 1, 0.88))
+        present = [(r, name) for r, name in roles if any(ratios(r, prec, n) for n in ns)]
+        w = 0.8 / len(present)
+        for i, (role, name) in enumerate(present):
+            for j, n in enumerate(ns):
+                rs = ratios(role, prec, n)
+                if not rs:
+                    continue
+                x = j - 0.4 + w * (i + 0.5)
+                m, lo, hi = rs
+                ax.bar(x, m, w * 0.88, color=ROLE_COLOR[role], zorder=2,
+                       label=name if j == min(k for k, nn in enumerate(ns) if ratios(role, prec, nn)) else None)
+                if role == "tuned":
+                    continue
+                if hi > lo:
+                    ax.errorbar(x, m, yerr=[[m - lo], [hi - m]], color=plot.INK, linewidth=0.7, capsize=1.5, zorder=3)
+                ax.annotate(f"{m:.2f}", (x, hi), xytext=(0, 2), textcoords="offset points", ha="center", va="bottom",
+                            fontsize=7, color=plot.INK, rotation=90 if len(present) > 3 else 0)
+        ax.axhline(1.0, color=plot.INK, linestyle="--", linewidth=0.9, zorder=1)
+        ax.set_xticks(range(len(ns)), [str(n) for n in ns])
+        ax.set_xlabel("FFT size", color=plot.INK)
+        ax.set_title(f"{prec} I/O", fontsize=10.5, color=plot.INK)
+        axis_style(ax)
+    axes[0].set_ylabel("throughput relative to tuned cuFFTDx (higher is better)", color=plot.INK)
+    axes[0].set_ylim(0, max(1.15, axes[0].get_ylim()[1] * 1.06))
+    legend_below(fig, axes)
+    fig.text(0.5, 0.02, setup + " Configurations chosen on repeat 1; bars are the mean ratio over repeats 2-3, whiskers "
+             "their range. Tuned can fall below default when the repeat-1 winner did not keep its lead.",
+             ha="center", va="bottom", fontsize=7.5, color=plot.MUTED, wrap=True)
+    fig.tight_layout(rect=(0, 0.14, 1, 1))
     fig.savefig(os.path.join(out, "throughput_tuned.png"), dpi=150)
 
-    acc_ref = "c32_accurate" if have_c32 else "accurate"
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4.8))
+    eroles = [("tuned", "cuFFTDx fastest", "s"), ("accurate", "cuFFTDx most accurate", "o")]
+    if have_c32:
+        eroles.append(("c32_accurate", "cuFFTDx fp32 compute, fp16 I/O, most accurate", "D"))
+    eroles.append(("monarch", "Monarch (cuBLASDx)", "o"))
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.9))
     for ax, prec in zip(axes, plot.PRECS):
-        ns = sorted({p[0] for k in err if k[1] == prec for p in err[k]})
-        series = []
-        for role, color, name in (("tuned", GRAY_LIGHT, "cuFFTDx fastest"), ("accurate", GRAY_DARK, "cuFFTDx most accurate"),
-                                  ("c32_accurate", C32, "cuFFTDx fp32 compute, fp16 I/O, most accurate"),
-                                  ("monarch", plot.COLOR["monarch"], "Monarch (cuBLASDx)")):
-            vals = {n: (t, t, t, c) for n, t, c in err[(role, prec)]}
-            if vals:
-                series.append((name, color, vals))
-        pos = bars(ax, ns, series, logy=True)
-        ref_err = {n: t for n, t, _ in (err[(acc_ref, prec)] or err[("accurate", prec)])}
-        ratio = {n: ref_err[n] / t for n, t, _ in err[("monarch", prec)] if n in ref_err}
-        annotate(ax, pos, "Monarch (cuBLASDx)", ns, ratio, logy=True)
-        ax.set_title(f"{prec} I/O", loc="left", fontsize=10.5, color=plot.INK, fontweight="bold")
-        if prec == "fp16":
-            ax.set_ylabel("relative L2 error vs FP64 (lower is better)", color=plot.MUTED)
-    handles, labels = [], []
-    for ax in axes:
-        for h, l in zip(*ax.get_legend_handles_labels()):
-            if l not in labels:
-                handles.append(h), labels.append(l)
-    tick = matplotlib.lines.Line2D([], [], color=plot.INK, linewidth=1.6)
-    handles.append(tick), labels.append("error of the transform alone (input already rounded)")
-    fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, 0.05), ncol=3, frameon=False, fontsize=9)
-    acc_name = ("cuFFTDx fp32-compute most accurate / Monarch (fp16 I/O), cuFFTDx most accurate / Monarch (fp32 I/O)"
-                if have_c32 else "cuFFTDx most accurate / Monarch")
-    header(fig, "Accuracy", f"Bars: total error vs exact input. Label above each group: {acc_name}.",
-           foot.replace("bars are the mean of repeats 2-3, whiskers their range", "median over 5 seeds"))
-    fig.tight_layout(rect=(0, 0.15, 1, 0.88))
+        for role, name, mk in eroles:
+            pts = err[(role, prec)]
+            if not pts:
+                continue
+            c = ROLE_COLOR[role]
+            ns = [p[0] for p in pts]
+            ax.plot(ns, [p[1] for p in pts], color=c, marker=mk, markersize=6, linewidth=1.8,
+                    linestyle="--" if role == "tuned" else "-", label=name)
+            if role != "tuned":
+                ax.plot(ns, [p[2] for p in pts], color=c, marker=mk, markersize=8, markerfacecolor="white",
+                        markeredgewidth=1.4, linestyle=":", linewidth=1.2)
+        ax.set_xscale("log", base=2)
+        ax.set_yscale("log")
+        allns = sorted({p[0] for k in err if k[1] == prec for p in err[k]})
+        ax.set_xticks(allns, [str(n) for n in allns])
+        ax.xaxis.set_minor_locator(matplotlib.ticker.NullLocator())
+        ys = [v for k in err if k[1] == prec for p in err[k] for v in p[1:] if v]
+        lo, hi = math.floor(math.log10(min(ys))), math.floor(math.log10(max(ys)))
+        ax.yaxis.set_major_locator(matplotlib.ticker.FixedLocator(
+            [m * 10 ** e for e in range(lo, hi + 1) for m in (1, 1.5, 2, 3, 5, 7) if min(ys) / 1.1 <= m * 10 ** e <= max(ys) * 1.1]))
+        ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(
+            lambda y, _: f"{y / 10 ** math.floor(math.log10(y)):g}e{math.floor(math.log10(y))}"))
+        ax.yaxis.set_minor_locator(matplotlib.ticker.NullLocator())
+        ax.set_xlabel("FFT size", color=plot.INK)
+        ax.set_title(f"{prec} I/O", fontsize=10.5, color=plot.INK)
+        axis_style(ax)
+    axes[0].set_ylabel("relative L2 error vs FP64 (lower is better)", color=plot.INK)
+    hollow = matplotlib.lines.Line2D([], [], color=plot.MUTED, marker="o", markerfacecolor="white", linestyle=":")
+    filled = matplotlib.lines.Line2D([], [], color=plot.MUTED, marker="o", linestyle="-")
+    legend_below(fig, axes, [(filled, "total: exact input"), (hollow, "compute only: input already rounded")])
+    fig.text(0.5, 0.02, setup + " Median over 5 seeds. Most accurate = lowest error over the EPT x FPB grid; "
+             "fastest = the tuned configuration of the throughput figure.",
+             ha="center", va="bottom", fontsize=7.5, color=plot.MUTED)
+    fig.tight_layout(rect=(0, 0.17, 1, 1))
     fig.savefig(os.path.join(out, "error_decomposition.png"), dpi=150)
     print(f"\nfigures in {out}")
 
