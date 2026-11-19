@@ -123,7 +123,7 @@ cuda/common/     harness: allocation, timing, error computation, JSON output
 cuda/cufftdx/    baseline: conventional block FFT with cuFFTDx
 cuda/monarch/    Monarch FFT with cuBLASDx
 gpu/runner.ipynb Colab/Kaggle notebook: clone, fetch MathDx, build, run, save results
-scripts/         env_check.sh, sweep.py, plot.py, sass_check.sh
+scripts/         env_check.sh, sweep.py, final.py, figures.py, tables.py, sass_check.sh
 results/         raw measured data only
 docs/            derivation.md, methodology.md, results.md, decisions.md
 mcp/             (phase 5) MCP server

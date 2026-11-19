@@ -1,11 +1,6 @@
-// Batched block-level 1D C2C forward FFT with cuFFTDx, fp16 and fp32: the baseline. A third variant stores
-// fp16 (__half2 in global memory, like the fp16 path and Monarch fp16) but computes in fp32.
-//
-// Kernel structure, the load/store index math and the fp16 RRII packing follow the cuFFTDx
-// examples shipped with MathDx 26.10 (example/cufftdx/02_simple_fft_block/simple_fft_block.cu,
-// 03_block_fft_performance/block_fft_performance.hpp, common/block_io.hpp, common/fp16_common.hpp),
-// Copyright NVIDIA Corporation, Apache-2.0. Differences: out-of-place, natural (RIRI) global
-// layout for fp16, and my own harness for timing and accuracy.
+// cuFFTDx block FFT baseline: fp16, fp32, and fp16 storage with fp32 compute.
+// Kernel, index math and RRII packing follow the MathDx 26.10 cuFFTDx examples (02_simple_fft_block,
+// 03_block_fft_performance, 08_mixed_precision; Copyright NVIDIA Corporation, Apache-2.0).
 #include <type_traits>
 #include <utility>
 
@@ -15,8 +10,7 @@
 
 using namespace cufftdx;
 
-// T: compute precision, S: storage precision of the global I/O.
-// EPT = FPB = 0: the library's suggestion (the default baseline); otherwise one point of the tuning grid
+// T compute, S storage precision; EPT = FPB = 0 is the library's suggested configuration
 template <class T, unsigned N, unsigned EPT = 0, unsigned FPB = 0, class S = T>
 struct cfg {
   using base = decltype(Block() + Size<N>() + Type<fft_type::c2c>() + Direction<fft_direction::forward>() +
@@ -119,7 +113,6 @@ bool run(const args& a, FILE* f, const std::string& prov) {
                 FFT::shared_memory_size, occ);
   std::snprintf(label, sizeof label, "cufftdx%s %s N=%5u ept=%2u fpb=%3u smem=%6u", grid ? "-grid" : "",
                 kp, N, FFT::elements_per_thread, fpb, FFT::shared_memory_size);
-  // loose sanity bounds; fp16 includes rounding the input itself (see docs/decisions.md)
   char key[64];
   if (grid)
     std::snprintf(key, sizeof key, "cufftdx:%s:%u:e%u:f%u", kp, N, EPT, FPB);
@@ -144,10 +137,7 @@ bool sweep(const args& a, FILE* f, const std::string& prov) {
 }
 
 #ifdef DXB_GRID_N
-// Tuning grid for one N: every ElementsPerThread the sm_75 database lists for this size
-// (include/cufftdx/database/records/750/database_{fp16,fp32}_fwd.json, the same lists for both precisions)
-// times FFTsPerBlock in {1..32}, keeping what the library's own static_asserts allow: EPT divides N, at most
-// 1024 threads, and an even FPB for fp16 (implicit batching). Shared memory is checked at run time.
+// Tuning grid for one N: the EPTs of the sm_75 database x FPB 1..32, filtered like the library's static_asserts
 template <class T, unsigned N, unsigned EPT, unsigned FPB>
 constexpr bool legal() {
   constexpr bool fp16 = std::is_same_v<T, __half>;

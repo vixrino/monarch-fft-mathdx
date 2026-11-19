@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
-# One sweep = both binaries + SASS counts in one GPU session, written to one new
-# results/<gpu>/<date>_sweep[_k].jsonl. Each binary already covers every N, factorization and
-# precision it supports, at two batch sizes (one block's group for latency, ~2^14 for throughput).
-# --grid adds the cuFFTDx tuning grid (build target cufftdx_grid); --repeat R writes R sweep files in a row.
+# Both binaries and their SASS counts in one GPU session, into a new results/<gpu>/<date>_sweep[_k].jsonl.
+# --grid adds the cuFFTDx tuning grid, --repeat R writes R files in a row.
 import argparse
 import datetime
 import json
@@ -34,7 +32,7 @@ def new_path(root):
 MONARCH = re.compile(r"monarch<(__half|float), \(unsigned int\)(\d+), \(unsigned int\)(\d+), \(unsigned int\)(\d+)>")
 CUFFTDX = re.compile(r"^block_fft N=(\d+) (__half|float)( io=__half2)?$")
 PREC = {"__half": "fp16", "float": "fp32"}
-# git_dirty means tracked source changed; results/ and docs/figures/ are outputs the runner may write
+# git_dirty ignores outputs the runner writes
 SRC_ONLY = (":(exclude)results", ":(exclude)docs/figures")
 
 

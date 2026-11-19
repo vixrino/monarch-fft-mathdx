@@ -244,8 +244,7 @@ struct bench {
   std::string key;  // impl:prec:n[:n1xn2], matched by --only
 };
 
-// Accuracy against the FP64 cuFFT reference, then timing at batch = group (latency) and ~2^14 (throughput).
-// launch(x, y) runs the kernel on x.n / n FFTs and returns the grid size it used.
+// Accuracy against FP64 cuFFT, then timing at batch = one group (latency) and 2^14 (throughput).
 template <class IO, class Launch>
 bool measure(FILE* f, const bench& b, const args& a, const std::string& prov, Launch launch) {
   if (a.only && b.key != a.only) return true;
@@ -260,8 +259,7 @@ bool measure(FILE* f, const bench& b, const args& a, const std::string& prov, La
     return true;
   }
   const size_t ab = round_up(acc_ffts, b.group);
-  // two references: from the exact fp64 input (total error) and from the input as rounded to IO (compute
-  // error, without the input quantization that no FFT of IO data can undo)
+  // total error from the exact input, compute error from the input already rounded to IO
   dbuf<double2> x64(ab * b.n), r64(ab * b.n), xq(ab * b.n), rq(ab * b.n);
   dbuf<IO> x(ab * b.n), y(ab * b.n);
   std::vector<double> rel(acc_seeds), mx(acc_seeds), relq(acc_seeds), mxq(acc_seeds);

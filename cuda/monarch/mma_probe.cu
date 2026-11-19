@@ -1,8 +1,5 @@
-// Which cuBLASDx configuration emits HMMA on sm_75 for complex<half> x complex<half> -> complex<float>, and
-// what it costs: one 64x64x64 GEMM per block, a batch of them per launch; only the layout/accumulator/tile choice
-// differs. Read the instruction from scripts/sass_check.sh on this binary. Every GEMM of the batch is checked
-// against an fp64 host GEMM on exact small-integer inputs, then the error on random fp16 inputs is measured; with
-// --out the timing and the error go to a JSON-lines file.
+// complex<half> x complex<half> -> complex<float> 64^3 GEMM on sm_75 with plain, suggested and forced-tile
+// configurations: exactness, timing and random-input error of each (docs/cublasdx_sm75_layouts.md).
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -131,7 +128,6 @@ bool run(const char* name, FILE* f, const std::string& prov) {
         err = std::fmax(err, std::fabs(v.real() - re) + std::fabs(v.imag() - im));
       }
     }
-  // 8 real flops per complex multiply-add
   const double med = q(0.5), tflops = 8.0 * m * m * m * batch / (med * 1e-3) / 1e12;
   std::printf("%-10s max |err| = %g  %s  median %.3f ms [%.3f, %.3f]  %.2f TFLOP/s  smem %u B  %d blocks/SM\n", name,
               err, err == 0 ? "ok" : "MISMATCH", med, q(0.25), q(0.75), tflops, smem, occ);
@@ -152,8 +148,7 @@ bool run(const char* name, FILE* f, const std::string& prov) {
   return err == 0;
 }
 
-// Random U(-1, 1) complex inputs rounded to fp16, error against an fp64 GEMM on the same rounded inputs: it
-// isolates how each instruction path forms and accumulates the products (see docs/decisions.md, mma_probe opcodes)
+// reference on the already-rounded inputs, so only the GEMM's own arithmetic is measured
 constexpr unsigned acc_gemms = 64;
 
 template <int Variant, class G, bool Suggest>

@@ -1,14 +1,5 @@
-// Batched block-level Monarch / four-step FFT, N = n1 * n2, as two cuBLASDx GEMMs.
-// Index maps and math: reference/monarch.py and docs/derivation.md. Per group of fpb FFTs:
-//
-//   buf  <- x                as A1 = (fpb*n2 x n1), A1[f*n2 + i2, i1] = x_f[n2*i1 + i2]
-//   acc1  = A1 @ F_n1        GEMM 1, M = fpb*n2, N = n1, K = n1 (= (F_n1 @ A1^T)^T, F_n1 is symmetric)
-//   buf  <- acc1 * tw        as A2 = (fpb*n1 x n2), A2[f*n1 + j1, i2]; rounded to T
-//   acc2  = A2 @ F_n2        GEMM 2, M = fpb*n1, N = n2, K = n2
-//   buf  <- acc2             as X_f[j1 + n1*j2] (the transpose, plain indexing), rounded to T, copied out
-// A1, A2 and the F tables use cuBLASDx's suggested (swizzled) smem layouts for fp16, plain row-major for fp32.
-//
-// Every cuBLASDx name used here is checked against the MathDx 26.10 headers/docs; see docs/decisions.md.
+// Batched block-level Monarch FFT, N = n1 * n2: x -> A1 @ F_n1 -> * twiddle -> A2 @ F_n2 -> transposed out.
+// Index maps in docs/derivation.md and reference/monarch.py.
 #include <type_traits>
 
 #include <cublasdx.hpp>
@@ -78,13 +69,12 @@ void monarch_fft(const typename M::io* x, typename M::io* y, const typename M::i
     data* buf = f1 + M::f_elems;
     const unsigned tid = threadIdx.x;
 
-    // all smem writes below go through (row, col) tensor coordinates, so they are valid for swizzled layouts
+    // (row, col) tensor coordinates keep the writes valid for swizzled layouts
     auto a1 = cublasdx::make_tensor(buf, layout_a<g1, sg>());
     auto b1 = cublasdx::make_tensor(f1, layout_b<g1, sg>());
     auto a2 = cublasdx::make_tensor(buf, layout_a<g2, sg>());
     auto b2 = cublasdx::make_tensor(f2, layout_b<g2, sg>());
 
-    // F tables are loaded once per block and reused for every group (persistent grid)
     for (unsigned i = tid; i < n1 * n1; i += threads) b1(i / n1, i % n1) = reinterpret_cast<const data&>(f1g[i]);
     if constexpr (!M::share_f)
       for (unsigned i = tid; i < n2 * n2; i += threads) b2(i / n2, i % n2) = reinterpret_cast<const data&>(f2g[i]);
@@ -181,7 +171,6 @@ bool run(const args& a, FILE* f, const std::string& prov) {
                 N1, N2, fpb, threads, M::smem, occ);
   std::snprintf(label, sizeof label, "monarch %s N=%5u %3ux%-3u fpb=%2u smem=%6u", fp16 ? "fp16" : "fp32", n, N1,
                 N2, fpb, M::smem);
-  // same sanity bounds as the cuFFTDx baseline
   char key[64];
   std::snprintf(key, sizeof key, "monarch:%s:%u:%ux%u", fp16 ? "fp16" : "fp32", n, N1, N2);
   bench b{"monarch_block_fft", c, n, fpb, fp16 ? 1e-2 : 1e-5, label, key};

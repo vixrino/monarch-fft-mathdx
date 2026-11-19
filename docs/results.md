@@ -8,7 +8,7 @@ Every number below comes from the three sweep files of one Colab session (2026-1
 
 Throughput and accuracy tables come from
 `python3 scripts/final.py results/tesla_t4/2026-11-19_sweep{,_2,_3}.jsonl --figures docs/figures/tesla_t4`. The
-per-configuration Monarch, latency and SASS tables come from `python3 scripts/plot.py --tables
+per-configuration Monarch, latency and SASS tables come from `python3 scripts/tables.py
 results/tesla_t4/2026-11-19_sweep.jsonl` (default cuFFTDx configuration). Statements tagged *(interpretation)* are
 my reading of the numbers, not measurements. The 11-18 sweeps (without the mixed-precision baseline) give similar fp16
 and fp32 ratios (Limitations has the largest difference) and are kept in `results/tesla_t4/`, but are not used
@@ -187,7 +187,7 @@ Repeat 1, default cuFFTDx configuration.
 | fp32 | monarch | 4096 | 64x64 | 1 | 66.1 [65.7, 66.8] |
 
 The two implementations put different numbers of FFTs in a block, so each row is one launch of one block, not
-equal work. The full latency table is in the `plot.py --tables` output. The mixed variant's latency records
+equal work. The full latency table is in the `tables.py` output. The mixed variant's latency records
 are in the sweep files but not tabulated.
 
 ## Tensor-core evidence (SASS)

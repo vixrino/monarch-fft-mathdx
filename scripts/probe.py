@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-# mma_probe in one GPU session: timing and random-input error of the three cuBLASDx configurations
-# (build/mma_probe --out), their static SASS counts and top opcodes, written to one new
-# results/<gpu>/<date>_mma_probe[_k].jsonl.
+# mma_probe timing, error, SASS counts and top opcodes into a new results/<gpu>/<date>_mma_probe[_k].jsonl.
 #   python3 scripts/probe.py [--build build] [--results results]
 import argparse
 import datetime
@@ -40,11 +38,9 @@ def main():
             "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "cmd": " ".join(sys.argv)}
     with open(path, "a") as f:
-        lines = [l for l in sh("bash", "scripts/sass_check.sh", binary, "probe").splitlines()[1:] if l.strip()]
+        lines = [s for s in sh("bash", "scripts/sass_check.sh", binary, "probe").splitlines()[1:] if s.strip()]
         for i, line in enumerate(lines):
             total, mma, ffma, hfma2, fn = line.split(None, 4)
-            # template arguments start with the variant index (see mma_probe.cu); sass_check.sh sorts by name,
-            # so the position is the fallback
             m = re.search(r"probe<(?:\(int\))?(\d)", fn)
             v = m[1] if m else str(i)
             r = {"experiment": "sass", "binary": "mma_probe", "variant": VARIANT.get(v, v), "function": fn,
@@ -52,7 +48,6 @@ def main():
                  "counts": "static", **prov}
             f.write(json.dumps(r) + "\n")
             print(f"  sass {r['variant']:9s} mma={r['mma']:4d} ffma={r['ffma']:5d} total={r['sass_total']:6d}")
-        # 12 most frequent opcodes per kernel (OPS=1 mode of sass_check.sh)
         out = subprocess.run(["bash", "scripts/sass_check.sh", binary, "probe"], capture_output=True, text=True,
                              check=True, env={**os.environ, "OPS": "1"}).stdout
         ops = {}
