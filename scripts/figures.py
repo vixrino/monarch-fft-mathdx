@@ -89,9 +89,10 @@ def figures(sel, reps, later, err, out):
     axes[0].set_ylim(0, max(1.15, axes[0].get_ylim()[1] * 1.06))
     legend_below(fig, axes)
     fig.text(0.5, 0.02, setup + " Configurations chosen on repeat 1; bars are the mean ratio over repeats 2-3, whiskers "
-             "their range. Tuned can fall below default when the repeat-1 winner did not keep its lead.",
+             "their range. Tuned can fall below default when the repeat-1 winner did not keep its lead.\n"
+             "Monarch runs N ≤ 4096; fp32 N = 2048 not run (shared memory).",
              ha="center", va="bottom", fontsize=7.5, color=MUTED, wrap=True)
-    fig.tight_layout(rect=(0, 0.14, 1, 1))
+    fig.tight_layout(rect=(0, 0.16, 1, 1))
     fig.savefig(os.path.join(out, "throughput_tuned.png"), dpi=150)
 
     eroles = [("tuned", "cuFFTDx fastest", "s"), ("accurate", "cuFFTDx most accurate", "v")]
