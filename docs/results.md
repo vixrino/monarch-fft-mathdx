@@ -236,14 +236,16 @@ Repeat 1, default binaries.
 
 Every fp16 Monarch kernel has MMA > 0; fp32 Monarch and all cuFFTDx kernels have none. The mixed kernels have the
 fp32 kernels' FFMA counts and no HFMA2, so the transform itself runs in fp32; their extra instructions over the
-fp32 kernels (e.g. 688 vs 592 at N = 256) fit the half-float conversions on load and store. In the 8×32 Monarch
-configuration, GEMM 1 (N = 8 columns) stays on FMA: the suggested path selects the 16×8×8 HMMA atom only when the
-GEMM divides a 32×16×8 warp tile (`docs/cublasdx_sm75_layouts.md`).
+fp32 kernels (e.g. 688 vs 592 at N = 256) fit the half-float conversions on load and store. The 8×32 Monarch
+configuration has the same 128 HMMA as 16×16; *(interpretation)* its GEMM 1 (N = 8 columns) does not divide the
+32×16×8 warp tile and so cannot use the HMMA atom (`docs/cublasdx_sm75_layouts.md`). No opcode histogram of the
+Monarch kernels is stored.
 
 ## Nsight Compute profile (fp16, earlier session)
 
-This section is not from the final sweeps. Files: `results/tesla_t4/2026-11-17_ncu_*_2.csv` (commit 38e465c, the
-same Monarch and default cuFFTDx kernels as the final sweeps). Monarch 64×64 before the shared-F change is from
+This section is not from the final sweeps. Files: `results/tesla_t4/2026-11-17_ncu_*_2.csv` (commit 38e465c; the
+CSVs do not store the commit, it comes from the git history of the files). The Monarch and default cuFFTDx kernel
+sources are unchanged between 38e465c and 83e3916. Monarch 64×64 before the shared-F change is from
 `2026-11-17_ncu_monarch_fp16_4096_64x64.csv` (commit ea51822). Each is `scripts/profile.sh` with `ncu --set full`,
 one launch at batch 16384. The tuned cuFFTDx configurations were not profiled.
 
@@ -280,13 +282,14 @@ Measured (the three sweep files above):
    has 2.9× (N = 256) to 9.0× (N = 16384) less error than the most accurate pure-fp16 configuration.
 3. **Against pure-fp16 cuFFTDx, Monarch is more accurate and slower.** 2.1-3.0× less total error than the most
    accurate fp16 configuration, at 0.83× (256), 0.80× (512), 0.81× (1024) and 0.41× (2048, 4096) of the fastest.
-   Against cuFFTDx's default fp16 configuration Monarch was faster at N = 256 (196.6 vs 161.4 GB/s); EPT tuning
-   removes that.
+   Against cuFFTDx's default fp16 configuration Monarch was faster at N = 256 (196.6 vs 161.4 GB/s) and slightly
+   at 512; EPT tuning removes that.
 4. **fp32: Monarch is slower and less accurate.** It runs on FFMA at 0.14-0.37× of tuned cuFFTDx's throughput,
    with 1.3-1.8× the error of the most accurate cuFFTDx configuration.
 5. **Run-to-run variation.** Most ratio ranges over repeats 2-3 are under 0.05 wide. The widest are fp16
    tuned/default at 1024 ([1.01, 1.25]), mixed/tuned at 2048 ([0.79, 0.98]), Monarch/mixed at 1024 ([0.74, 0.86])
-   and 2048 ([0.43, 0.51]), and fp32 tuned/default at 8192 ([0.91, 1.03]). Absolute throughput drifts down across the three repeats at large N, most for the mixed variant:
+   and 2048 ([0.43, 0.51]), Monarch/tuned at 1024 ([0.78, 0.85]), and fp32 tuned/default at 512 ([0.97, 1.05])
+   and 8192 ([0.91, 1.03]). Absolute throughput drifts down across the three repeats at large N, most for the mixed variant:
    its default configuration at N = 4096 goes 219.0, 186.3, 171.6 GB/s (−22 %); pure fp16 at N = 8192 goes 243.3,
    230.7, 217.0 (−11 %). Ratios are taken within a repeat, which removes a drift common to both kernels but not one
    that hits one kernel more.
@@ -318,8 +321,9 @@ Interpretation:
 - **One GPU.** T4 only (Turing, sm_75). It has fp16 HMMA but no TF32/BF16 tensor cores. Nothing here says how
   Ampere or Hopper behave, where both the tensor cores and the fp32 throughput differ.
 - **One session for the final numbers.** Three repeats in one Colab session bound the within-session noise, and
-  absolute throughput drifts across them (finding 5). Clocks are not locked. The 11-18 session gives similar ratios;
-  the largest difference is fp16 tuned/default at N = 1024 (1.28 then, 1.13 [1.01, 1.25] now).
+  absolute throughput drifts across them (finding 5). Clocks are not locked. The 11-18 session
+  (`2026-11-18_sweep_{3,4,5}.jsonl`) gives similar ratios; the largest difference is fp16 tuned/default at N = 1024
+  (1.28 then, 1.13 [1.01, 1.25] now).
 - **Tuning is asymmetric in kind.** cuFFTDx gets its two exposed knobs (EPT × FPB) over the legal range. Monarch
   gets its factorization, plus structural choices I made by hand (persistent grid, shared F table, transposed
   GEMM 1) that have no cuFFTDx counterpart. I did not write a custom cuFFTDx kernel, and the mixed variant does
@@ -327,8 +331,8 @@ Interpretation:
 - **Profiling is partial.** Four fp16 kernels, from an earlier session, at the base clock that ncu imposes. The
   tuned and mixed cuFFTDx configurations, and all fp32 kernels, were not profiled. The grid binaries were not
   SASS-checked.
-- **Limited sizes.** N ≤ 4096 for Monarch, power-of-two two-factor splits only. fp32 2048 is missing: with the
-  8 FFTs per 4096 elements I use everywhere (2 per block at N = 2048) it needs 72 KB of shared memory. One FFT per
+- **Limited sizes.** N ≤ 4096 for Monarch, power-of-two two-factor splits only. fp32 2048 is missing: with
+  max(1, 4096/N) FFTs per block (2 at N = 2048) it needs 72 KB of shared memory. One FFT per
   block would need 56 KB and fit; I did not run that configuration.
 - **One input distribution.** Uniform inputs only.
 - **No Monarch variant with an fp32 intermediate,** and no fusion experiment.

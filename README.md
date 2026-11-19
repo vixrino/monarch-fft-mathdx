@@ -6,7 +6,7 @@ with MathDx 26.10 (cuFFTDx 1.8.0, cuBLASDx 0.8.0) and CUDA 13.0.
 
 ## Findings
 
-**On the T4, fp32 compute on fp16 storage dominates. The tensor-core Monarch FFT only beats pure-fp16 cuFFTDx.**
+**On the T4, fp32 compute on fp16 storage dominates. The tensor-core Monarch FFT only beats pure-fp16 cuFFTDx, and only on accuracy.**
 
 Three repeats in one session (`results/tesla_t4/2026-11-19_sweep{,_2,_3}.jsonl`), batch 16384, configurations
 chosen on repeat 1 and measured on repeats 2-3. Tables and method: [docs/results.md](docs/results.md).
@@ -18,8 +18,9 @@ chosen on repeat 1 and measured on repeats 2-3. Tables and method: [docs/results
   0.80-0.85× of its throughput for N ≤ 1024, about 0.5× above.
 - **That mixed variant sits on the fp16 storage floor:** 2.8e-4 total error at every N, the same as an exact FFT
   with fp16-rounded input and output (`scripts/storage_floor.py`).
-- **Against pure-fp16 cuFFTDx, Monarch is 2.1-3.0× more accurate and slower** (0.80-0.83× for N ≤ 1024, 0.41×
-  above). The gain comes from fp32 accumulation, not from the tensor cores.
+- **Against pure-fp16 cuFFTDx, Monarch has 2.1-3.0× less error than its most accurate configuration** and runs at
+  0.80-0.83× of its fastest (N ≤ 1024), 0.41× above. My reading: the gain comes from fp32 accumulation, which the
+  mixed variant also has, not from the tensor cores.
 - **fp32:** no fp32 tensor cores on the T4; Monarch reaches 0.14-0.37× of cuFFTDx's throughput.
 - **Evidence:** every fp16 Monarch kernel contains HMMA (SASS). At N = 4096 it executes 2.8× cuFFTDx's
   instructions with heavy shared-memory bank conflicts (Nsight Compute, earlier session).

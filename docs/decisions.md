@@ -862,6 +862,8 @@ which no fp16 FFT can undo.
   repeat-1 selection, since re-selecting on repeats 2-3 would undo the point of the protocol.
 
 ### plot.py keeps the default configuration
+
+(Later split into `scripts/tables.py` and `scripts/figures.py`; the rule below now lives in `tables.py`.)
 `plot.py` drops `variant == "grid"` rows, so its per-configuration, latency and SASS tables stay about the
 library's default cuFFTDx and the binaries that were SASS-checked. Without this, its "best cuFFTDx" would
 silently become a grid row with no SASS record.

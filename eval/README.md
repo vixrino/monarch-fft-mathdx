@@ -111,9 +111,10 @@ write MathDx code in any condition. It says nothing about whether docs or the MC
 
 What the transcripts do show:
 - **The model does not know the library in its real form.** Several final builds fail on an invented header:
-  `cuda_mathdx.h` (h01 in all three conditions, h02 A and B), `cudaFFTdx.h` (h03 B), `cublasDx.h` (h05 B). In h04 and h06-h08 under B
-  and C, it includes the real `cufftdx.hpp` / `cublasdx.hpp` and then calls invented host-style functions
-  (`cublasDxCreate`, `cufftDxExec`, `cublasDxGemmBatched`). cuFFTDx and cuBLASDx are header-only C++ templates
+  `cuda_mathdx.h` (h01 in all three conditions, h02 A and B), `cudaFFTdx.h` (h03 B), `cublasDx.h` (h05 B, h08 A),
+  `cuda_math.h` (h04 B). In h06-h08 under B and C it includes the real `cublasdx.hpp` and then calls invented
+  host-style functions (`cublasDxCreate`, `cublasDxGemmBatched`); h04 B also calls `cufftDxExec`, and h04 C calls
+  the host cuFFT API (`cufftPlan1d`). cuFFTDx and cuBLASDx are header-only C++ templates
   with no handles. Doc use was thin: h05 made no doc calls under B or C, `read_doc` was used only in h06-h08,
   and many searches returned nothing.
 - **The C loop was barely used.** Across the 8 C runs, `run_public_test` was called once (h03), and `sass_check`
