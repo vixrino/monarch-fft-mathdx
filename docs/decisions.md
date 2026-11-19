@@ -900,8 +900,8 @@ silently become a grid row with no SASS record.
   `--untracked-files=no`. The tracked files that changed were the PNGs in `docs/figures/<gpu>/`: runner cell 13
   (`plot.py --tables`) also redraws the figures into the clone. In the 72619e2 session the sweep ran before that
   cell (clean) and validate.py after it (dirty). In the a8f89ec session the standard cells, including cell 13,
-  ran before cmake was configured again for the grid, and cmake bakes the flag in at configure time. No source
-  file was changed in either session; the sweep code and kernels are those of the commit.
+  ran before cmake was configured again for the grid, and cmake bakes the flag in at configure time. No runner
+  step edits a source file, so I read the flag as the figures, but the old records cannot prove it.
 - **Fix.** The flag now means "tracked source changed": CMakeLists.txt, sweep.py and validate.py run
   `git status --porcelain --untracked-files=no -- . ':(exclude)results' ':(exclude)docs/figures'`, and runner
   cell 13 writes its figures to /tmp. Tested in a clone with a modified figure and a modified result file
