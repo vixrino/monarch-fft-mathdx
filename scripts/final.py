@@ -11,10 +11,13 @@
 #   python3 scripts/final.py results/tesla_t4/<d>_sweep_a.jsonl <..._b> <..._c> [--figures docs/figures/tesla_t4]
 import argparse
 import json
+import math
 import os
 from collections import defaultdict
 
 import matplotlib
+import matplotlib.lines  # noqa: F401
+import matplotlib.ticker  # noqa: F401
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
@@ -161,58 +164,136 @@ def main():
         figures(sel, reps, later, err, a.figures)
 
 
-def figures(sel, reps, later, err, out):
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4.4), sharey=True)
-    for ax, prec in zip(axes, plot.PRECS):
-        # default in a light tint with hollow squares: same hue and line style alone did not separate it from tuned
-        for role, color, ls, mk, face, name in (("default", "#8fb9ea", "--", "s", "white", "cuFFTDx default"),
-                                               ("tuned", plot.COLOR["cufftdx"], "-", "o", None, "cuFFTDx tuned"),
-                                               ("c32_tuned", C32, "-", "D", None, "cuFFTDx fp32 compute, fp16 I/O, tuned"),
-                                               ("monarch", plot.COLOR["monarch"], "-", "o", None, "Monarch")):
-            ns = sorted(n for (r, p, n) in sel if r == role and p == prec)
-            if not ns:
+# Bar charts in the layout of vendor benchmark slides: grouped bars per N, baselines in grays, the subject
+# (Monarch) in the accent color, the key ratio printed above its bar, the setup in a footnote. Neutral palette:
+# no vendor branding, since this is not an NVIDIA result.
+GRAY_LIGHT, GRAY_DARK = "#c4c4c4", "#6b6b6b"
+
+
+def bars(ax, ns, series, logy=False):
+    # series: [(label, color, {n: (value, lo, hi, compute_or_None)})]; returns x position of each (series, n)
+    w = 0.8 / len(series)
+    pos = {}
+    # log axis: every bar starts at the same decade, below the smallest value with margin, so no bar reads as zero
+    floor = 10 ** math.floor(math.log10(min(min(v[0], v[3] or v[0]) for _, _, vals in series for v in vals.values()) / 1.5)) if logy else 0
+    for i, (label, color, vals) in enumerate(series):
+        for j, n in enumerate(ns):
+            if n not in vals:
                 continue
-            ys, lo, hi = [], [], []
-            for n in ns:
-                v = [rep.get(sel[(role, prec, n)]) for rep in later]
-                m, l, h = stats([x["gbps_eff"] for x in v if x]) if all(v) else (float("nan"),) * 3
-                ys.append(m), lo.append(m - l), hi.append(h - m)
-            ax.errorbar(ns, ys, yerr=[lo, hi], color=color, linestyle=ls, marker=mk, markersize=7, linewidth=2,
-                        markerfacecolor=face or color, markeredgewidth=1.5, capsize=3, label=name)
-        plot.style(ax, "effective GB/s, batch 2^14" if prec == "fp16" else "")
-        plot.xticks(ax, sorted({n for (_, p, n) in sel if p == prec}))
-        ax.set_title(prec, color=plot.INK, fontsize=11)
-    fig.legend(*axes[0].get_legend_handles_labels(), loc="lower center", ncol=4, frameon=False, fontsize=9)
-    fig.suptitle("Throughput, configuration fixed on repeat 1, mean and range over repeats 2-3",
-                 color=plot.INK, fontsize=11)
-    fig.tight_layout(rect=(0, 0.07, 1, 1))
+            v, lo, hi, c = vals[n]
+            x = j - 0.4 + w * (i + 0.5)
+            pos[(label, n)] = (x, v, hi)
+            ax.bar(x, v - floor, w * 0.9, bottom=floor, color=color, label=label if j == min(k for k, m in enumerate(ns) if m in vals) else None,
+                   zorder=2)
+            if hi > lo:
+                ax.errorbar(x, v, yerr=[[v - lo], [hi - v]], color=plot.INK, linewidth=0.8, capsize=1.5, zorder=3)
+            if c is not None:
+                ax.hlines(c, x - w * 0.45, x + w * 0.45, color=plot.INK, linewidth=1.6, zorder=3)
+    ax.set_xticks(range(len(ns)), [str(n) for n in ns])
+    ax.set_xlabel("FFT size N", color=plot.MUTED)
+    if logy:
+        ax.set_yscale("log")
+        top = max(v[0] for _, _, vals in series for v in vals.values())
+        ticks = [m * 10 ** e for e in range(int(math.log10(floor)), int(math.log10(top)) + 2) for m in (1, 2, 3, 5)
+                 if floor <= m * 10 ** e <= top * 1.3]
+        ax.set_ylim(floor, top * 1.35)
+        ax.yaxis.set_major_locator(matplotlib.ticker.FixedLocator(ticks))
+        ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(
+            lambda y, _: f"{y / 10 ** math.floor(math.log10(y)):.0f}e{math.floor(math.log10(y))}"))
+        ax.yaxis.set_minor_locator(matplotlib.ticker.NullLocator())
+    ax.grid(True, axis="y", color=plot.GRID, linewidth=0.8)
+    ax.set_axisbelow(True)
+    for sp in ("top", "right", "left"):
+        ax.spines[sp].set_visible(False)
+    ax.spines["bottom"].set_color(plot.MUTED)
+    ax.tick_params(colors=plot.MUTED, labelsize=9, length=0)
+    return pos
+
+
+def annotate(ax, pos, label, ns, ratio, logy=False):
+    for n in ns:
+        if (label, n) in pos and n in ratio:
+            x, _, top = pos[(label, n)]
+            ax.annotate(f"{ratio[n]:.2f}x", (x, top), xytext=(0, 3), textcoords="offset points", ha="center",
+                        va="bottom", fontsize=8, fontweight="bold", color=plot.INK)
+
+
+def header(fig, title, subtitle, foot):
+    fig.text(0.012, 0.975, title, ha="left", va="top", fontsize=13, fontweight="bold", color=plot.INK)
+    fig.text(0.012, 0.915, subtitle, ha="left", va="top", fontsize=9.5, color=plot.MUTED)
+    fig.text(0.012, 0.012, foot, ha="left", va="bottom", fontsize=7.5, color=plot.MUTED)
+
+
+def figures(sel, reps, later, err, out):
+    r0 = next(r for r in reps[0].values())
+    foot = (f"{r0['gpu']}, MathDx {r0['mathdx']}, CUDA {r0['cuda_runtime'] // 1000}.{r0['cuda_runtime'] % 1000 // 10}, "
+            f"batch 2^14 FFTs. Configurations chosen on repeat 1; bars are the mean of repeats 2-3, whiskers their range.")
+    have_c32 = any(k[0].startswith("c32") for k in sel)
+    ref, ref_name = ("c32_tuned", "cuFFTDx fp32-compute tuned") if have_c32 else ("tuned", "cuFFTDx tuned")
+
+    def gb(role, prec, n):
+        v = [rep.get(sel[(role, prec, n)]) for rep in later] if (role, prec, n) in sel else []
+        return stats([x["gbps_eff"] for x in v]) if v and all(v) else None
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.8), sharey=True)
+    for ax, prec in zip(axes, plot.PRECS):
+        ns = sorted({n for (_, p, n) in sel if p == prec})
+        series = []
+        for role, color, name in (("default", GRAY_LIGHT, "cuFFTDx default"), ("tuned", GRAY_DARK, "cuFFTDx tuned"),
+                                  ("c32_tuned", C32, "cuFFTDx fp32 compute, fp16 I/O, tuned"),
+                                  ("monarch", plot.COLOR["monarch"], "Monarch (cuBLASDx)")):
+            vals = {n: (*gb(role, prec, n), None) for n in ns if gb(role, prec, n)}
+            if vals:
+                series.append((name, color, vals))
+        pos = bars(ax, ns, series)
+        r = ref if any(gb(ref, prec, n) for n in ns) else "tuned"
+        ratio = {n: gb("monarch", prec, n)[0] / gb(r, prec, n)[0] for n in ns if gb("monarch", prec, n) and gb(r, prec, n)}
+        annotate(ax, pos, "Monarch (cuBLASDx)", ns, ratio)
+        ax.set_title(f"{prec} I/O", loc="left", fontsize=10.5, color=plot.INK, fontweight="bold")
+        if prec == "fp16":
+            ax.set_ylabel("effective GB/s (higher is better)", color=plot.MUTED)
+    handles, labels = [], []
+    for ax in axes:
+        for h, l in zip(*ax.get_legend_handles_labels()):
+            if l not in labels:
+                handles.append(h), labels.append(l)
+    fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, 0.05), ncol=4, frameon=False, fontsize=9)
+    header(fig, "Throughput", f"Label above each Monarch bar: Monarch / {ref_name}"
+           + (" (fp16 I/O), / cuFFTDx tuned (fp32 I/O)." if have_c32 else "."), foot)
+    fig.tight_layout(rect=(0, 0.13, 1, 0.88))
     fig.savefig(os.path.join(out, "throughput_tuned.png"), dpi=150)
 
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4.6))
+    acc_ref = "c32_accurate" if have_c32 else "accurate"
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.8))
     for ax, prec in zip(axes, plot.PRECS):
-        for role, color, mk, name, both in (("tuned", plot.COLOR["cufftdx"], "s", "cuFFTDx fastest", False),
-                                            ("accurate", plot.COLOR["cufftdx"], "o", "cuFFTDx most accurate", True),
-                                            ("c32_accurate", C32, "D", "cuFFTDx fp32 compute, fp16 I/O", True),
-                                            ("monarch", plot.COLOR["monarch"], "o", "Monarch", True)):
-            pts = err[(role, prec)]
-            if not pts:
-                continue
-            ns = [p[0] for p in pts]
-            ax.plot(ns, [p[1] for p in pts], color=color, marker=mk, markersize=7, linestyle="--" if not both else "-",
-                    linewidth=2, label=f"{name}, total")
-            # larger hollow rings: a different marker shape alone was hard to tell apart, and a ring stays visible
-            # around the filled total marker where the two curves coincide
-            if both:
-                ax.plot(ns, [p[2] for p in pts], color=color, marker=mk, markersize=10, markerfacecolor="none",
-                        markeredgewidth=1.5, linestyle=":", linewidth=1.5, label=f"{name}, compute only")
-        plot.style(ax, "relative L2 error vs FP64" if prec == "fp16" else "", logy=True)
-        plot.xticks(ax, sorted({p[0] for k in err if k[1] == prec for p in err[k]}))
-        ax.set_title(prec, color=plot.INK, fontsize=11)
-    # legend outside the axes: inside, it covered the fp32 curves
-    fig.legend(*axes[0].get_legend_handles_labels(), loc="lower center", ncol=3, frameon=False, fontsize=9)
-    fig.suptitle("Error vs exact input (total) and vs input rounded to the I/O type (compute only)",
-                 color=plot.INK, fontsize=11)
-    fig.tight_layout(rect=(0, 0.12, 1, 1))
+        ns = sorted({p[0] for k in err if k[1] == prec for p in err[k]})
+        series = []
+        for role, color, name in (("tuned", GRAY_LIGHT, "cuFFTDx fastest"), ("accurate", GRAY_DARK, "cuFFTDx most accurate"),
+                                  ("c32_accurate", C32, "cuFFTDx fp32 compute, fp16 I/O, most accurate"),
+                                  ("monarch", plot.COLOR["monarch"], "Monarch (cuBLASDx)")):
+            vals = {n: (t, t, t, c) for n, t, c in err[(role, prec)]}
+            if vals:
+                series.append((name, color, vals))
+        pos = bars(ax, ns, series, logy=True)
+        ref_err = {n: t for n, t, _ in (err[(acc_ref, prec)] or err[("accurate", prec)])}
+        ratio = {n: ref_err[n] / t for n, t, _ in err[("monarch", prec)] if n in ref_err}
+        annotate(ax, pos, "Monarch (cuBLASDx)", ns, ratio, logy=True)
+        ax.set_title(f"{prec} I/O", loc="left", fontsize=10.5, color=plot.INK, fontweight="bold")
+        if prec == "fp16":
+            ax.set_ylabel("relative L2 error vs FP64 (lower is better)", color=plot.MUTED)
+    handles, labels = [], []
+    for ax in axes:
+        for h, l in zip(*ax.get_legend_handles_labels()):
+            if l not in labels:
+                handles.append(h), labels.append(l)
+    tick = matplotlib.lines.Line2D([], [], color=plot.INK, linewidth=1.6)
+    handles.append(tick), labels.append("error of the transform alone (input already rounded)")
+    fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, 0.05), ncol=3, frameon=False, fontsize=9)
+    acc_name = ("cuFFTDx fp32-compute most accurate / Monarch (fp16 I/O), cuFFTDx most accurate / Monarch (fp32 I/O)"
+                if have_c32 else "cuFFTDx most accurate / Monarch")
+    header(fig, "Accuracy", f"Bars: total error vs exact input. Label above each Monarch bar: {acc_name}.",
+           foot.replace("bars are the mean of repeats 2-3, whiskers their range", "median over 5 seeds"))
+    fig.tight_layout(rect=(0, 0.15, 1, 0.88))
     fig.savefig(os.path.join(out, "error_decomposition.png"), dpi=150)
     print(f"\nfigures in {out}")
 
