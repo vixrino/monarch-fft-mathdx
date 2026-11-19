@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # mma_probe timing, error, SASS counts and top opcodes into a new results/<gpu>/<date>_mma_probe[_k].jsonl.
-#   python3 scripts/probe.py [--build build] [--results results]
+#   python3 scripts/probe.py [--build build] [--results results] [--tag war --patch "what changed in MathDx"]
 import argparse
 import datetime
 import json
@@ -14,10 +14,10 @@ from sweep import SRC_ONLY, sh
 VARIANT = {"0": "plain", "1": "suggested", "2": "forced"}
 
 
-def new_path(root):
+def new_path(root, tag):
     gpu = sh("nvidia-smi", "--query-gpu=name", "--format=csv,noheader").splitlines()[0].lower().replace(" ", "_")
     os.makedirs(os.path.join(root, gpu), exist_ok=True)
-    stem = os.path.join(root, gpu, f"{datetime.date.today().isoformat()}_mma_probe")
+    stem = os.path.join(root, gpu, f"{datetime.date.today().isoformat()}_mma_probe" + (f"_{tag}" if tag else ""))
     path, k = f"{stem}.jsonl", 2
     while os.path.exists(path):
         path, k = f"{stem}_{k}.jsonl", k + 1
@@ -28,9 +28,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--build", default="build")
     ap.add_argument("--results", default="results")
+    ap.add_argument("--tag")
+    ap.add_argument("--patch", help="recorded as mathdx_patch in every record")
     a = ap.parse_args()
     binary = os.path.join(a.build, "mma_probe")
-    path = new_path(a.results)
+    path = new_path(a.results, a.tag)
     rc = subprocess.run([binary, "--out", path]).returncode
     prov = {"git_commit": sh("git", "rev-parse", "--short=7", "HEAD"),
             "git_dirty": bool(sh("git", "status", "--porcelain", "--untracked-files=no", "--", ".", *SRC_ONLY)),
@@ -61,6 +63,9 @@ def main():
             f.write(json.dumps({"experiment": "sass_opcodes", "binary": "mma_probe", "variant": v,
                                 "top_opcodes": hist, "counts": "static", **prov}) + "\n")
             print(f"  ops  {v:9s} " + " ".join(f"{o}={c}" for o, c in sorted(hist.items(), key=lambda x: -x[1])[:6]))
+    if a.patch:
+        rows = [dict(json.loads(line), mathdx_patch=a.patch) for line in open(path) if line.strip()]
+        open(path, "w").writelines(json.dumps(r) + "\n" for r in rows)
     print(path)
     return rc
 
