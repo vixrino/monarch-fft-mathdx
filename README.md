@@ -143,8 +143,8 @@ scope, ran every experiment on a GPU, and reviewed the results. Design
 decisions and failed attempts are logged in docs/decisions.md.
 
 What the agent struggled with in practice was the MathDx API: which instruction
-cuBLASDx actually selects. Twice it assumed the fp16 GEMMs would use tensor
-cores, and twice they did not. Both times the correctness tests passed, and only
+cuBLASDx actually selects. Twice it assumed the complex fp16 GEMMs would use
+tensor cores, and twice they did not. Both times the correctness tests passed, and only
 the SASS check caught it. docs/agent_log.md lists these mistakes. They motivated
 the second part: an MCP server (mcp/) with whitelisted compile, test, SASS and
 diagnose tools, and an evaluation (eval/) of whether docs and that loop help a
