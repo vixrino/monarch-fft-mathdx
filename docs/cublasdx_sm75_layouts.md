@@ -2,6 +2,18 @@
 
 Posted as [NVIDIA/CUDALibrarySamples#378](https://github.com/NVIDIA/CUDALibrarySamples/issues/378).
 
+## Upstream status
+
+- The maintainers confirmed on #378 that this is an sm_75 bug in the GEMM tuning database; a fix is planned for
+  the next release.
+- Suggested workaround, tested here on a copy of the 26.10 package (`scripts/war_sm75.py`): comment out the 4
+  sm75 fp16 includes of `include/cublasdx/database/gemm/database_records.hpp` (`fp16_fp16_fp16`, `fp16_fp16_fp32`,
+  `cfp16_cfp16_cfp16`, `cfp16_cfp16_cfp32`).
+- With it, the plain kernel gets 256 HMMA (1144 SASS instructions), runs in 2.67 ms [2.66, 2.68] instead of
+  13.82 ms, and its random-input error drops from 2.03e-4 to 2.64e-7, the same as the suggested and forced kernels.
+  It stays 1.14× slower than the suggested-layout kernel (2.33 ms in the same run).
+  Source: `results/tesla_t4/2026-11-19_mma_probe_war.jsonl` (commit 12a1bde, `mathdx_patch` field in every record).
+
 A question, scoped to what I ran: complex `__half` inputs, `float` accumulator, sm_75 (Tesla T4), cuBLASDx 0.8.0.
 I have not run real-valued fp16, other shapes or other GPUs.
 
