@@ -1,4 +1,4 @@
-# Whitelisted command execution and output parsers for the DxBench MCP server. No MCP dependency, so the
+# Whitelisted command execution and output parsers for the monarch-fft-mathdx MCP server. No MCP dependency, so the
 # validation and parsing logic is unit-tested without a GPU (tests/test_mcp_runner.py).
 #
 # Safety model: every command is a fixed argv list built here (never a shell string), every user-supplied

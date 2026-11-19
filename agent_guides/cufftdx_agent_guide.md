@@ -1,6 +1,6 @@
 # cuFFTDx agent guide (UNOFFICIAL)
 
-> **UNOFFICIAL. Original work for the DxBench repo, not written, reviewed or endorsed by NVIDIA.**
+> **UNOFFICIAL. Original work for the monarch-fft-mathdx repo, not written, reviewed or endorsed by NVIDIA.**
 > NVIDIA ships an agent-targeted guide for cuBLASDx (`llms.txt` plus `markdown/` in the cuBLASDx HTML
 > docs). On 2026-11-17 I found no equivalent for cuFFTDx:
 > - `https://docs.nvidia.com/cuda/cufftdx/llms.txt` returns 404;

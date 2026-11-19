@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# DxBench MCP server: build, test, benchmark and inspect the MathDx kernels of this repo on the GPU machine.
+# monarch-fft-mathdx MCP server: build, test, benchmark and inspect the MathDx kernels of this repo on the GPU machine.
 #   DXB_REPO=/path/to/repo MATHDX_ROOT=/path/to/nvidia/mathdx/26.10 python3 mcp/server.py      (stdio)
 # The client chooses among fixed tools with enum / regex-checked arguments; it never passes a command line.
 import os
@@ -21,9 +21,9 @@ Binary = Literal["monarch_fft", "cufftdx_block_fft"]
 Arch = Literal["75", "80", "86", "89", "90"]
 
 server = MCPServer(
-    name="dxbench",
+    name="monarch-fft-mathdx",
     instructions=(
-        "Tools to build and validate cuFFTDx / cuBLASDx kernels in the DxBench repo on a GPU machine. "
+        "Tools to build and validate cuFFTDx / cuBLASDx kernels in the monarch-fft-mathdx repo on a GPU machine. "
         "Typical loop: edit source, call diagnose(binary); it builds, checks accuracy against an FP64 cuFFT "
         "reference and checks the SASS for tensor-core instructions, and returns the first failing stage with "
         "links to the NVIDIA docs section to read. Resources: the official cuBLASDx agent guide (llms.txt and "
@@ -154,7 +154,7 @@ def cublasdx_markdown(page: str) -> str:
         return f.read()
 
 
-@server.resource("dxbench://agent_guides/cufftdx", mime_type="text/markdown",
+@server.resource("monarch-fft-mathdx://agent_guides/cufftdx", mime_type="text/markdown",
                  description="UNOFFICIAL cuFFTDx agent guide written for this repo (NVIDIA publishes none)")
 def cufftdx_guide() -> str:
     with open(os.path.join(REPO, "agent_guides", "cufftdx_agent_guide.md")) as f:

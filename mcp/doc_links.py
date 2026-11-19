@@ -6,7 +6,7 @@ import re
 
 CB = "https://docs.nvidia.com/cuda/cublasdx/"
 CF = "https://docs.nvidia.com/cuda/cufftdx/"
-UNOFFICIAL = "dxbench://agent_guides/cufftdx"
+UNOFFICIAL = "monarch-fft-mathdx://agent_guides/cufftdx"
 
 # (pattern on the compiler message or the failure kind, title, url)
 COMPILE = [

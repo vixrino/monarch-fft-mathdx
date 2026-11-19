@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.26...3.31)
-project(dxbench LANGUAGES CXX CUDA)
+project(monarch_fft_mathdx LANGUAGES CXX CUDA)
 
 set(CUDA_ARCH 75 CACHE STRING "Target SM, e.g. 75 for T4")
 set(MATHDX_ROOT "" CACHE PATH "Unpacked MathDx, e.g. <dir>/nvidia-mathdx-25.12.1-cuda12/nvidia/mathdx/25.12")

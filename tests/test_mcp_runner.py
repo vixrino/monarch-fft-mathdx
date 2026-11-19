@@ -66,9 +66,9 @@ def test_real_timeout(tmp_path):
 
 
 NVCC_LOG = """\
-/content/dxbench/cuda/monarch/monarch_fft.cu(95): error: identifier "a3" is undefined
+/content/monarch-fft-mathdx/cuda/monarch/monarch_fft.cu(95): error: identifier "a3" is undefined
           detected during instantiation of "void monarch_fft<M>(...) [with M=monarch<__half, 64U, 64U, 1U>]" at line 200
-/content/dxbench/cuda/monarch/monarch_fft.cu(95): error: identifier "a3" is undefined
+/content/monarch-fft-mathdx/cuda/monarch/monarch_fft.cu(95): error: identifier "a3" is undefined
           detected during instantiation of "void monarch_fft<M>(...) [with M=monarch<float, 64U, 64U, 1U>]" at line 200
 /x/include/cublasdx/operators.hpp(42): error: static assertion failed with "cublasdx::Size: M must be > 0"
 In file included from foo.cpp:1:
@@ -124,7 +124,7 @@ def test_mcp_session_in_process(monkeypatch):
             assert tools == {"env_check", "build", "run_tests", "benchmark", "sass_check", "diagnose"}
             res = await c.call_tool("benchmark", {"binary": "monarch_fft", "key": "monarch:fp16:256:16x16; id"})
             assert json.loads(res.content[0].text)["rejected"].startswith("key")  # dict results arrive as JSON text
-            guide = await c.read_resource("dxbench://agent_guides/cufftdx")
+            guide = await c.read_resource("monarch-fft-mathdx://agent_guides/cufftdx")
             assert "UNOFFICIAL" in guide.contents[0].text
             with pytest.raises(Exception, match="Unknown resource"):  # no path traversal out of the docs folder
                 await c.read_resource("mathdx://cublasdx/markdown/..%2F..%2Fsecret")
