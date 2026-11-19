@@ -52,13 +52,16 @@ def gbps_iqr(r):
 
 def split(rows):
     # the cuFFTDx tuning grid and the fp32-compute / fp16-storage variant are analysed by final.py; these
-    # tables keep the library's default configuration
-    rows = [r for r in rows if r.get("variant") != "grid" and r.get("compute", r.get("precision")) == r.get("precision")]
+    # tables keep the library's default configuration, plus the SASS counts of the fp32-compute kernels
+    rows = [r for r in rows if r.get("variant") != "grid"]
+    mixed = [dict(r, precision=r["precision"] + " (fp32 compute)") for r in rows
+             if r.get("experiment") == "sass" and r.get("compute", r["precision"]) != r["precision"]]
+    rows = [r for r in rows if r.get("compute", r.get("precision")) == r.get("precision")]
     timed = [r for r in rows if r.get("status") == "ok" and r["experiment"] != "sass"]
     big = max(r["batch"] for r in timed)
     thr = [r for r in timed if r["batch"] == big]
     lat = [r for r in timed if r["batch"] == r["ffts_per_block"]]
-    return thr, lat, [r for r in rows if r.get("experiment") == "sass"], [r for r in rows if r.get("status") == "skipped"]
+    return thr, lat, [r for r in rows if r.get("experiment") == "sass"] + mixed, [r for r in rows if r.get("status") == "skipped"]
 
 
 def gbps_cell(r):

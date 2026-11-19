@@ -167,7 +167,7 @@ def main():
 # Layout after the performance charts in the cuFFTDx docs (examples page, 26.10): throughput relative to a
 # baseline normalized to 1.0 and drawn in a light color, the ratio printed on each bar, legend and setup note
 # below. Neutral palette and default font: these are not NVIDIA results.
-BASE, DEFAULT, ACCURATE = "#bdbdbd", "#7f7f7f", "#3f3f3f"
+BASE, DEFAULT, ACCURATE = "#a8a8a8", "#5f5f5f", "#2f6f8f"
 ROLE_COLOR = {"tuned": BASE, "default": DEFAULT, "accurate": ACCURATE, "c32_tuned": C32, "c32_accurate": C32,
               "monarch": plot.COLOR["monarch"]}
 
@@ -210,7 +210,7 @@ def figures(sel, reps, later, err, out):
 
     roles = [("tuned", "cuFFTDx tuned (= 1.0)"), ("default", "cuFFTDx default")]
     if have_c32:
-        roles.append(("c32_tuned", "cuFFTDx fp32 compute, fp16 I/O, tuned"))
+        roles.append(("c32_tuned", "cuFFTDx mixed (fp16 I/O, fp32 compute), tuned"))
     roles.append(("monarch", "Monarch (cuBLASDx)"))
     fig, axes = plt.subplots(1, 2, figsize=(13, 4.9), sharey=True)
     for ax, prec in zip(axes, plot.PRECS):
@@ -230,8 +230,10 @@ def figures(sel, reps, later, err, out):
                     continue
                 if hi > lo:
                     ax.errorbar(x, m, yerr=[[m - lo], [hi - m]], color=plot.INK, linewidth=0.7, capsize=1.5, zorder=3)
+                # white box: keeps the dashed 1.0 line and neighbouring bars from cutting through the label
                 ax.annotate(f"{m:.2f}", (x, hi), xytext=(0, 2), textcoords="offset points", ha="center", va="bottom",
-                            fontsize=7, color=plot.INK, rotation=90 if len(present) > 3 else 0)
+                            fontsize=7, color=plot.INK, rotation=90 if len(present) > 3 else 0, zorder=4,
+                            bbox=dict(boxstyle="square,pad=0.1", facecolor="white", edgecolor="none"))
         ax.axhline(1.0, color=plot.INK, linestyle="--", linewidth=0.9, zorder=1)
         ax.set_xticks(range(len(ns)), [str(n) for n in ns])
         ax.set_xlabel("FFT size", color=plot.INK)
@@ -248,7 +250,7 @@ def figures(sel, reps, later, err, out):
 
     eroles = [("tuned", "cuFFTDx fastest", "s"), ("accurate", "cuFFTDx most accurate", "o")]
     if have_c32:
-        eroles.append(("c32_accurate", "cuFFTDx fp32 compute, fp16 I/O, most accurate", "D"))
+        eroles.append(("c32_accurate", "cuFFTDx mixed (fp16 I/O, fp32 compute), most accurate", "D"))
     eroles.append(("monarch", "Monarch (cuBLASDx)", "o"))
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.9))
     for ax, prec in zip(axes, plot.PRECS):
@@ -257,11 +259,16 @@ def figures(sel, reps, later, err, out):
             if not pts:
                 continue
             c = ROLE_COLOR[role]
-            ns = [p[0] for p in pts]
-            ax.plot(ns, [p[1] for p in pts], color=c, marker=mk, markersize=6, linewidth=1.8,
+            # one point per N of the panel, NaN where this series was not measured, so the line breaks there
+            allns = sorted({p[0] for k in err if k[1] == prec for p in err[k]})
+            got = {p[0]: p for p in pts}
+            ns = allns
+            tot = [got[n][1] if n in got else float("nan") for n in ns]
+            cmp_ = [got[n][2] if n in got and got[n][2] else float("nan") for n in ns]
+            ax.plot(ns, tot, color=c, marker=mk, markersize=6, linewidth=1.8,
                     linestyle="--" if role == "tuned" else "-", label=name)
             if role != "tuned":
-                ax.plot(ns, [p[2] for p in pts], color=c, marker=mk, markersize=8, markerfacecolor="white",
+                ax.plot(ns, cmp_, color=c, marker=mk, markersize=8, markerfacecolor="white",
                         markeredgewidth=1.4, linestyle=":", linewidth=1.2)
         ax.set_xscale("log", base=2)
         ax.set_yscale("log")
