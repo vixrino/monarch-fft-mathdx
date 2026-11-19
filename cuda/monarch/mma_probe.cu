@@ -1,7 +1,8 @@
 // Which cuBLASDx configuration emits HMMA on sm_75 for complex<half> x complex<half> -> complex<float>, and
 // what it costs: one 64x64x64 GEMM per block, a batch of them per launch; only the layout/accumulator/tile choice
 // differs. Read the instruction from scripts/sass_check.sh on this binary. Every GEMM of the batch is checked
-// against an fp64 host GEMM; with --out the timing goes to a JSON-lines file.
+// against an fp64 host GEMM on exact small-integer inputs, then the error on random fp16 inputs is measured; with
+// --out the timing and the error go to a JSON-lines file.
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -151,6 +152,76 @@ bool run(const char* name, FILE* f, const std::string& prov) {
   return err == 0;
 }
 
+// Random U(-1, 1) complex inputs rounded to fp16, error against an fp64 GEMM on the same rounded inputs: it
+// isolates how each instruction path forms and accumulates the products (see docs/decisions.md, mma_probe opcodes)
+constexpr unsigned acc_gemms = 64;
+
+template <int Variant, class G, bool Suggest>
+void accuracy(const char* name, FILE* f, const std::string& prov) {
+  using ta = typename G::a_value_type;
+  using tc = typename G::c_value_type;
+  const size_t n = size_t(acc_gemms) * m * m;
+  std::vector<ta> ha(n), hb(n);
+  std::vector<double> ar(n), ai(n), br(n), bi(n);
+  auto r16 = [](double x) { return double(__half2float(__float2half_rn(float(x)))); };
+  ta *da, *db;
+  tc* dc;
+  CUDA_CHECK(cudaMalloc(&da, n * sizeof(ta)));
+  CUDA_CHECK(cudaMalloc(&db, n * sizeof(ta)));
+  CUDA_CHECK(cudaMalloc(&dc, n * sizeof(tc)));
+  auto kernel = probe<Variant, G, Suggest>;
+  const unsigned smem = cublasdx::get_shared_storage_size_ab<G>();
+  CUDA_CHECK(cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem));
+  std::vector<double> rel, mabs;
+  std::vector<tc> hc(n);
+  for (int seed = 0; seed < acc_seeds; ++seed) {
+    for (size_t i = 0; i < n; ++i) {
+      ar[i] = r16(uniform_pm1(seed, 4 * i)), ai[i] = r16(uniform_pm1(seed, 4 * i + 1));
+      br[i] = r16(uniform_pm1(seed, 4 * i + 2)), bi[i] = r16(uniform_pm1(seed, 4 * i + 3));
+      ha[i] = ta(float(ar[i]), float(ai[i]));
+      hb[i] = ta(float(br[i]), float(bi[i]));
+    }
+    CUDA_CHECK(cudaMemcpy(da, ha.data(), n * sizeof(ta), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(db, hb.data(), n * sizeof(ta), cudaMemcpyHostToDevice));
+    kernel<<<acc_gemms, threads, smem>>>(da, db, dc);
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaMemcpy(hc.data(), dc, n * sizeof(tc), cudaMemcpyDeviceToHost));
+    double num = 0, den = 0, mx = 0;
+    for (size_t g = 0; g < acc_gemms; ++g) {
+      const size_t o = g * m * m;
+      for (unsigned i = 0; i < m; ++i)
+        for (unsigned j = 0; j < m; ++j) {
+          double re = 0, im = 0;
+          for (unsigned k = 0; k < m; ++k) {
+            const size_t x = o + i * m + k, y = o + k * m + j;
+            re += ar[x] * br[y] - ai[x] * bi[y];
+            im += ar[x] * bi[y] + ai[x] * br[y];
+          }
+          const tc v = hc[o + i + j * m];
+          const double dr = v.real() - re, di = v.imag() - im;
+          num += dr * dr + di * di, den += re * re + im * im;
+          mx = std::fmax(mx, std::sqrt(dr * dr + di * di));
+        }
+    }
+    rel.push_back(std::sqrt(num / den)), mabs.push_back(mx);
+  }
+  std::sort(rel.begin(), rel.end());
+  std::sort(mabs.begin(), mabs.end());
+  const double r = rel[rel.size() / 2], a = mabs[mabs.size() / 2];
+  std::printf("%-10s random U(-1,1) inputs: rel L2 %.3e  max abs %.3e  (median of %d seeds, %u GEMMs each)\n", name,
+              r, a, acc_seeds, acc_gemms);
+  if (f)
+    std::fprintf(f,
+                 "{\"experiment\":\"mma_probe_accuracy\",\"variant\":\"%s\",\"m\":%u,\"n\":%u,\"k\":%u,"
+                 "\"type\":\"complex\",\"precision\":\"fp16,fp16,fp32\",\"inputs\":\"U(-1,1) rounded to fp16\","
+                 "\"reference\":\"fp64 host GEMM on the rounded inputs\",\"gemms_per_seed\":%u,\"seeds\":%d,"
+                 "\"rel_l2_median\":%.6e,\"max_abs_median\":%.6e,%s}\n",
+                 name, m, m, m, acc_gemms, acc_seeds, r, a, prov.c_str());
+  cudaFree(da);
+  cudaFree(db);
+  cudaFree(dc);
+}
+
 int main(int argc, char** argv) {
   args a;
   if (!parse_args(argc, argv, a)) return 2;
@@ -163,6 +234,9 @@ int main(int argc, char** argv) {
   bool ok = run<0, base, false>("plain", f, prov);
   ok &= run<1, base, true>("suggested", f, prov);
   ok &= run<2, forced, false>("forced", f, prov);
+  accuracy<0, base, false>("plain", f, prov);
+  accuracy<1, base, true>("suggested", f, prov);
+  accuracy<2, forced, false>("forced", f, prov);
   if (f) std::fclose(f);
   return ok ? 0 : 1;
 }

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-# mma_probe in one GPU session: timing of the three cuBLASDx configurations (build/mma_probe --out) and their
-# static SASS counts, written to one new results/<gpu>/<date>_mma_probe[_k].jsonl.
+# mma_probe in one GPU session: timing and random-input error of the three cuBLASDx configurations
+# (build/mma_probe --out), their static SASS counts and top opcodes, written to one new
+# results/<gpu>/<date>_mma_probe[_k].jsonl.
 #   python3 scripts/probe.py [--build build] [--results results]
 import argparse
 import datetime
@@ -51,6 +52,20 @@ def main():
                  "counts": "static", **prov}
             f.write(json.dumps(r) + "\n")
             print(f"  sass {r['variant']:9s} mma={r['mma']:4d} ffma={r['ffma']:5d} total={r['sass_total']:6d}")
+        # 12 most frequent opcodes per kernel (OPS=1 mode of sass_check.sh)
+        out = subprocess.run(["bash", "scripts/sass_check.sh", binary, "probe"], capture_output=True, text=True,
+                             check=True, env={**os.environ, "OPS": "1"}).stdout
+        ops = {}
+        for line in out.splitlines():
+            if not line.strip():
+                continue
+            count, op, fn = line.split(None, 2)
+            m = re.search(r"probe<(?:\(int\))?(\d)", fn)
+            ops.setdefault(VARIANT.get(m[1], m[1]) if m else fn, {})[op] = int(count)
+        for v, hist in ops.items():
+            f.write(json.dumps({"experiment": "sass_opcodes", "binary": "mma_probe", "variant": v,
+                                "top_opcodes": hist, "counts": "static", **prov}) + "\n")
+            print(f"  ops  {v:9s} " + " ".join(f"{o}={c}" for o, c in sorted(hist.items(), key=lambda x: -x[1])[:6]))
     print(path)
     return rc
 

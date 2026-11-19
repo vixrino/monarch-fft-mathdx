@@ -940,3 +940,17 @@ package after writing the variant. The mechanism is the same:
 - **Drift.** Absolute throughput fell across the three repeats at large N, by 22 % for the mixed default at
   N = 4096. Ratios are paired within a repeat; a drift that hits one kernel more than another still biases them,
   which the ranges partly show (Monarch/mixed at 2048: [0.43, 0.51]).
+
+## mma_probe: what the plain-layout kernel executes (2026-11-19)
+
+- **Opcode histogram.** `OPS=1 bash scripts/sass_check.sh build/mma_probe probe` on Colab (commit d768996, run
+  by hand, output not saved): the plain kernel's dominant opcodes are 8192 HMUL2 and 8192 FADD; it has no HMMA,
+  FFMA or HFMA2, which is why the FFMA/HFMA2 counts of `2026-11-19_mma_probe.jsonl` are 0. The suggested and forced
+  kernels have 256 HMMA each. From the next probe run on, `scripts/probe.py` stores the 12 most frequent opcodes
+  per kernel (`experiment: sass_opcodes`) in the results file.
+- **What it suggests.** HMUL2 is a paired fp16 multiply, so each complex product term would be rounded to fp16
+  before the fp32 add. That is a hypothesis about accuracy, not only speed.
+- **Test.** mma_probe now also measures the error of each kernel on random U(-1, 1) complex inputs rounded to
+  fp16, against an fp64 GEMM on the same rounded inputs (64 GEMMs per seed, median of 5 seeds, rel L2 and max
+  abs). If plain's error is clearly above suggested/forced, the products are rounded to fp16 before the fp32
+  accumulation. Result: pending the run.
